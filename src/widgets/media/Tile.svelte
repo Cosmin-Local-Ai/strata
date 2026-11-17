@@ -34,6 +34,11 @@
     return () => { ro.disconnect(); body?.removeEventListener('scroll', send); invoke('eq_rect', { rect: null }) }
   })
 
+  // Remember the last player so the idle tile can open it again.
+  $effect(() => { if (m?.active && m.app) localStorage.setItem('np:last', m.app) })
+  const last = $derived((m?.active && m.app) || localStorage.getItem('np:last') || 'Spotify.exe')
+  const playerName = $derived(last.split(/[\!]/).pop()!.replace(/.exe$/i, '').replace(/^.*./, (x) => x).replace(/^SpotifyAB.SpotifyMusic_.*$/, 'Spotify'))
+  const playerIcon = $derived(/spotify/i.test(last) ? '%APPDATA%\Spotify\Spotify.exe' : last.includes('!') ? `shell:AppsFolder\${last}` : last)
   const ly = useLyrics(() => !!item.options.lyrics)
   const line = $derived(ly.lyrics?.synced[ly.index]?.text ?? '')
 </script>
@@ -60,7 +65,11 @@
     </span>
   </span>
 {:else}
-  <span class="idle"><Music size={18} /></span>
+  <!-- Nothing playing: stay on the dock as a launcher for the last player (Spotify until something plays). -->
+  <span class="idle" title="Click to open {playerName}">
+    <span class="art"><img src={iconUrl(playerIcon, 64)} alt="" onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")} /></span>
+    <span class="text"><span class="t">{playerName}</span><span class="a">Click to open</span></span>
+  </span>
 {/if}
 
 <style>
@@ -83,5 +92,6 @@
   .ctl button:hover:not(:disabled) { background: var(--surface-hover); }
   .ctl button:active:not(:disabled) { transform: scale(0.9); }
   .ctl button:disabled { opacity: 0.35; }
-  .idle { display: grid; place-items: center; width: var(--tile); height: 100%; color: var(--fg-3); }
+  .idle { display: flex; align-items: center; gap: 10px; padding: 0 12px 0 6px; height: 100%; opacity: 0.85; }
+  .idle-old { display: grid; place-items: center; width: var(--tile); height: 100%; color: var(--fg-3); }
 </style>

@@ -70,6 +70,7 @@ import AppsCard from './apps/Card.svelte'
 import { groupWindows, running, windowsForPinned } from './apps/apps.svelte'
 import { settings } from '../lib/stores.svelte'
 import { invoke } from '@tauri-apps/api/core'
+import { media } from '../lib/stores.svelte'
 import { audio } from '../lib/stores.svelte'
 
 function stepLayout(ctx: DockContext, dir: 1 | -1) {
@@ -185,6 +186,12 @@ export const widgets: WidgetDef[] = [
   {
     id: 'now-playing', name: 'Now Playing', category: 'media', description: 'Cover art and controls for any app that reports to Windows.',
     tile: MediaTile, card: MediaCard, shape: 'wide',
+    // Nothing playing: the click opens the last player (Spotify by default) instead of an empty card.
+    click: () => {
+      if (media.value?.active) return true
+      const last = localStorage.getItem('np:last') || 'Spotify.exe'
+      invoke('launch', { target: /spotify/i.test(last) ? 'spotify:' : last.includes('!') ? `shell:AppsFolder\${last}` : last })
+    },
     menu: (item) => [{ label: 'Lyrics mode (lrclib.net)', action: 'lyrics', checked: !!item.options.lyrics }],
     onMenu: (item, a, ctx) => { if (a === 'lyrics') ctx.setOptions(item, { lyrics: !item.options.lyrics }) },
   },
