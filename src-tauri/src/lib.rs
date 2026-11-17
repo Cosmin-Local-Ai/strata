@@ -117,6 +117,8 @@ fn cli_command(app: &tauri::AppHandle, argv: &[String]) {
     log::info!("cli command: {cmd}");
     let h = app.clone();
     match cmd.as_str() {
+        // Same as the Show Desktop widget (handy for hotkeys and for testing).
+        "show-desktop" => { std::thread::spawn(crate::system::misc::show_desktop); }
         "settings" => {
             tauri::async_runtime::spawn(async move {
                 let _ = commands::open_settings(h).await;

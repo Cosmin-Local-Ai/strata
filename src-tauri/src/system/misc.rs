@@ -85,40 +85,168 @@ fn keys(vks: &[VIRTUAL_KEY]) {
     unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32); }
 }
 
-/// Show Desktop that komorebi keeps up with. Win+D hides windows in a way komorebi loses, and pausing
-/// komorebi made it ignore the windows coming back. So: minimise normally (komorebi sees each one),
-/// and on the second click restore the same windows one at a time, oldest first, pausing briefly so
-/// komorebi registers every window, then put the focused one back in front and retile.
-struct Desk { hwnds: Vec<isize>, fg: isize }
+/// Show Desktop that komorebi keeps up with.
+///
+/// What goes wrong otherwise (reproduced 17 Nov): komorebi's transparency adds WS_EX_LAYERED to
+/// every unfocused window it manages. Minimising makes komorebi drop the window from its layout
+/// (normal). On restore komorebi re-checks it, sees the layered flag *it* added, and refuses it
+/// unless the app is on its layered allow-list, so the window ends up floating and unmanaged until
+/// it's reopened. So: remember what komorebi managed, minimise normally, and on restore (1) remove
+/// the layered flag where komorebi's own transparency put it, (2) restore one window at a time,
+/// (3) force-manage any window komorebi still missed with its own `manage` command, then put the
+/// original window back in front and retile.
+struct Desk { hwnds: Vec<isize>, fg: isize, managed: Vec<isize> }
 static DESK: std::sync::Mutex<Option<Desk>> = std::sync::Mutex::new(None);
 
+/// hwnds komorebi currently manages (all monitors and workspaces).
+fn komorebi_managed() -> Vec<isize> {
+    let Ok(o) = crate::komorebi::komorebic(&["state"]) else { return vec![] };
+    let Ok(v) = serde_json::from_slice::<serde_json::Value>(&o.stdout) else { return vec![] };
+    let mut out = vec![];
+    fn walk(v: &serde_json::Value, out: &mut Vec<isize>) {
+        match v {
+            serde_json::Value::Object(m) => {
+                if let (Some(h), Some(_)) = (m.get("hwnd").and_then(|x| x.as_i64()), m.get("exe")) { out.push(h as isize) }
+                for x in m.values() { walk(x, out) }
+            }
+            serde_json::Value::Array(a) => for x in a { walk(x, out) },
+            _ => {}
+        }
+    }
+    if let Some(ms) = v.get("monitors") { walk(ms, &mut out) }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// komorebi's transparency alpha and the apps it accepts as layered anyway.
+fn komorebi_transparency() -> Option<(u8, Vec<String>)> {
+    let o = crate::komorebi::komorebic(&["global-state"]).ok()?;
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).ok()?;
+    if v["transparency_enabled"].as_bool() != Some(true) { return None }
+    let alpha = v["transparency_alpha"].as_u64().unwrap_or(255) as u8;
+    let mut allow = vec![];
+    fn ids(v: &serde_json::Value, out: &mut Vec<String>) {
+        match v {
+            serde_json::Value::Object(m) => if m.get("kind").and_then(|k| k.as_str()) == Some("Exe") { if let Some(i) = m.get("id").and_then(|i| i.as_str()) { out.push(i.to_ascii_lowercase()) } },
+            serde_json::Value::Array(a) => for x in a { ids(x, out) },
+            _ => {}
+        }
+    }
+    ids(&v["layered_whitelist"], &mut allow);
+    Some((alpha, allow))
+}
+
+/// Remove WS_EX_LAYERED if komorebi's transparency put it there (same alpha, app not allow-listed).
+fn strip_komorebi_layer(hw: windows::Win32::Foundation::HWND, alpha: u8, allow: &[String]) {
+    use windows::Win32::UI::WindowsAndMessaging::{GetLayeredWindowAttributes, GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, LAYERED_WINDOW_ATTRIBUTES_FLAGS, WS_EX_LAYERED};
+    unsafe {
+        let ex = GetWindowLongPtrW(hw, GWL_EXSTYLE);
+        if ex & WS_EX_LAYERED.0 as isize == 0 { return }
+        let mut pid = 0u32;
+        windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(hw, Some(&mut pid));
+        if allow.contains(&crate::shell::gamemode::process_name(pid).to_ascii_lowercase()) { return }
+        let (mut key, mut a, mut flags) = (windows::Win32::Foundation::COLORREF(0), 0u8, LAYERED_WINDOW_ATTRIBUTES_FLAGS(0));
+        if GetLayeredWindowAttributes(hw, Some(&mut key), Some(&mut a), Some(&mut flags)).is_ok() && flags.0 == 2 /* LWA_ALPHA */ && a == alpha {
+            SetWindowLongPtrW(hw, GWL_EXSTYLE, ex & !(WS_EX_LAYERED.0 as isize));
+        }
+    }
+}
+
 fn restore_desktop(d: Desk) {
+    log::info!("show-desktop: restoring {:?}", d.hwnds);
+    let komorebi = crate::util::process_running(&["komorebi.exe"]);
+    let transparency = if komorebi { komorebi_transparency() } else { None };
     for &h in d.hwnds.iter().rev() {
         let hw = windows::Win32::Foundation::HWND(h as _);
         unsafe {
             if IsWindow(Some(hw)).as_bool() && IsIconic(hw).as_bool() {
+                if let Some((alpha, allow)) = &transparency { if d.managed.contains(&h) { strip_komorebi_layer(hw, *alpha, allow) } }
                 let _ = ShowWindow(hw, SW_SHOWNOACTIVATE);
-                std::thread::sleep(std::time::Duration::from_millis(45));
+                std::thread::sleep(std::time::Duration::from_millis(60));
             }
         }
+    }
+    if komorebi {
+        std::thread::sleep(std::time::Duration::from_millis(350));
+        // Anything komorebi managed before but didn't take back: hand it over explicitly.
+        let now = komorebi_managed();
+        let missed: Vec<isize> = d.managed.iter().copied().filter(|h| d.hwnds.contains(h) && !now.contains(h)).collect();
+        for &h in &missed {
+            let hw = windows::Win32::Foundation::HWND(h as _);
+            unsafe {
+                if !IsWindow(Some(hw)).as_bool() || IsIconic(hw).as_bool() { continue }
+                let _ = SetForegroundWindow(hw);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(80));
+            let _ = crate::komorebi::komorebic(&["manage"]);
+            std::thread::sleep(std::time::Duration::from_millis(60));
+        }
+        if !missed.is_empty() { log::info!("show-desktop: komorebi missed {missed:?}; managed them explicitly") }
     }
     unsafe {
         let fg = windows::Win32::Foundation::HWND(d.fg as _);
         if d.fg != 0 && IsWindow(Some(fg)).as_bool() { let _ = SetForegroundWindow(fg); }
     }
-    if crate::util::process_running(&["komorebi.exe"]) {
-        std::thread::sleep(std::time::Duration::from_millis(150));
+    if komorebi {
+        std::thread::sleep(std::time::Duration::from_millis(120));
         let _ = crate::komorebi::komorebic(&["retile"]);
     }
 }
 
+// ---- With komorebi: show the desktop by switching to an empty workspace (komorebi hides the windows
+// its own way, exactly like a normal workspace switch); the second click switches back. Windows are
+// never minimised, so komorebi's layout, transparency and focus are untouched (minimising behind
+// komorebi's back dropped windows from its layout and left Chromium apps blank; see D-028).
+struct WsDesk { monitor: usize, back_to: usize, empty: usize }
+static WS_DESK: std::sync::Mutex<Option<WsDesk>> = std::sync::Mutex::new(None);
+
+/// (focused monitor, its focused workspace, first empty workspace on it)
+fn komorebi_focus() -> Option<(usize, usize, Option<usize>)> {
+    let o = crate::komorebi::komorebic(&["state"]).ok()?;
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).ok()?;
+    let mi = v["monitors"]["focused"].as_u64()? as usize;
+    let m = &v["monitors"]["elements"][mi];
+    let cur = m["workspaces"]["focused"].as_u64()? as usize;
+    let empty = m["workspaces"]["elements"].as_array()?.iter().enumerate().find(|(i, w)| {
+        *i != cur
+            && w["containers"]["elements"].as_array().map_or(true, |a| a.is_empty())
+            && w["floating_windows"]["elements"].as_array().map_or(true, |a| a.is_empty())
+            && w["monocle_container"].is_null()
+            && w["maximized_window"].is_null()
+    }).map(|(i, _)| i);
+    Some((mi, cur, empty))
+}
+
+/// Returns true when it handled Show Desktop through komorebi.
+fn show_desktop_komorebi() -> bool {
+    if !crate::util::process_running(&["komorebi.exe"]) { return false }
+    let Some((mi, cur, empty)) = komorebi_focus() else { return false };
+    let mut g = WS_DESK.lock().unwrap();
+    if let Some(d) = g.take() {
+        // Still on the empty workspace we switched to: go back. Otherwise you moved on yourself.
+        if d.monitor == mi && cur == d.empty {
+            let _ = crate::komorebi::komorebic(&["focus-monitor-workspace", &d.monitor.to_string(), &d.back_to.to_string()]);
+            log::info!("show-desktop: back to workspace {} on monitor {}", d.back_to, d.monitor);
+            return true;
+        }
+    }
+    let Some(empty) = empty else { return false };
+    let _ = crate::komorebi::komorebic(&["focus-monitor-workspace", &mi.to_string(), &empty.to_string()]);
+    log::info!("show-desktop: monitor {mi} workspace {cur} -> empty workspace {empty}");
+    *g = Some(WsDesk { monitor: mi, back_to: cur, empty });
+    true
+}
+
 pub fn show_desktop() {
+    if show_desktop_komorebi() { return }
     let mut g = DESK.lock().unwrap();
     if let Some(d) = g.take() {
         drop(g);
         restore_desktop(d);
         return;
     }
+    let managed = if crate::util::process_running(&["komorebi.exe"]) { komorebi_managed() } else { vec![] };
     let mut hwnds = vec![];
     let fg = unsafe { GetForegroundWindow().0 as isize };
     // winlist::enumerate() is in z-order (top first); cloaked = on another komorebi workspace.
@@ -129,7 +257,8 @@ pub fn show_desktop() {
             std::thread::sleep(std::time::Duration::from_millis(15));
         }
     }
-    *g = Some(Desk { hwnds: hwnds.clone(), fg });
+    log::info!("show-desktop: minimised {:?} (foreground {fg}, komorebi managed {:?})", hwnds, managed);
+    *g = Some(Desk { hwnds: hwnds.clone(), fg, managed });
     drop(g);
     // If you bring one window back yourself (taskbar, Alt+Tab, Apps tile), forget the rest: they stay
     // minimised like normal, and the next click starts a fresh Show Desktop.
