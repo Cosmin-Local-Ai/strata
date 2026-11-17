@@ -1,0 +1,44 @@
+# Builds the signed Windows installer and the updater manifest (latest.json) when a version tag is
+# pushed (e.g. `git tag v0.2.0 && git push --tags`). Installed copies of Strata find the update
+# through Settings → About → Check for updates.
+#
+# One-time setup in the GitHub repository (Settings → Secrets and variables → Actions):
+#   TAURI_SIGNING_PRIVATE_KEY           contents of %USERPROFILE%\.tauri\strata.key (never commit it)
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  leave empty (the key was generated without a password)
+name: release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri -> target
+            guard -> target
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Tray hook DLL
+        run: tray\build.cmd
+        shell: cmd
+      - name: Taskbar guard
+        run: cargo build --release --manifest-path guard/Cargo.toml
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: Strata v__VERSION__
+          releaseBody: See the changelog for what's new.
+          releaseDraft: false
+          includeUpdaterJson: true

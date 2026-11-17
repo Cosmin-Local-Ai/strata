@@ -1,0 +1,58 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Strata",
+  "version": "0.1.0",
+  "identifier": "local.strata.dock",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "android": {
+      "debugApplicationIdSuffix": ".debug"
+    },
+    "createUpdaterArtifacts": true,
+    "publisher": "Strata",
+    "shortDescription": "Strata dock",
+    "resources": {
+      "../tray/out/strata-tray-hook.dll": "resources/strata-tray-hook.dll",
+      "../guard/target/release/strata-guard.exe": "resources/strata-guard.exe"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "startMenuFolder": "Strata"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDczQTU2QThEMzUwNzhENjQKUldSa2pRYzFqV3FsYzZGUU1xcFZuSEtNN2lYR2dyWjFTSXlMem96MnFYUXFvMk04eWJ4UDN6bnoK",
+      "endpoints": [
+        "https://github.com/Cosmin-Local-Ai/strata/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

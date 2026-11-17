@@ -1,0 +1,16 @@
+[package]
+name = "strata-guard"
+version = "0.1.0"
+edition = "2021"
+description = "Restores the Windows taskbar if Strata exits for any reason"
+
+[dependencies]
+windows = { version = "0.62", features = [
+  "Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading",
+] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
+strip = true

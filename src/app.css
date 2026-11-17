@@ -1,0 +1,82 @@
+/* Strata design tokens (tile radius ≈ 0.24 × tile height,
+   card surface ≈ white 5.5% with ≈ 15% border in dark mode, cards fade in ≈ 85–140 ms ease-out). */
+:root {
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --accent: #0a84ff;
+  --fg: rgba(255, 255, 255, 0.96);
+  --fg-2: rgba(255, 255, 255, 0.68);
+  --fg-3: rgba(255, 255, 255, 0.42);
+  --surface: rgba(255, 255, 255, 0.055);
+  --surface-hover: rgba(255, 255, 255, 0.10);
+  --surface-press: rgba(255, 255, 255, 0.15);
+  --border: rgba(255, 255, 255, 0.15);
+  --danger: #ff453a;
+  --good: #30d158;
+  --warn: #ffd60a;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --t-fast: 90ms;
+  --t-med: 140ms;
+  --t-slow: 220ms;
+}
+:root.light {
+  --fg: rgba(0, 0, 0, 0.9);
+  --fg-2: rgba(0, 0, 0, 0.62);
+  --fg-3: rgba(0, 0, 0, 0.4);
+  --surface: rgba(0, 0, 0, 0.05);
+  --surface-hover: rgba(0, 0, 0, 0.08);
+  --surface-press: rgba(0, 0, 0, 0.12);
+  --border: rgba(0, 0, 0, 0.12);
+}
+html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; user-select: none; color: var(--fg); }
+* { box-sizing: border-box; }
+body { font-family: var(--font); font-size: 13px; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: default; }
+:root { color-scheme: dark; }
+:root[data-style='white'], html.light { color-scheme: light; }
+input, textarea { font: inherit; color: inherit; }
+input[type='number']::-webkit-inner-spin-button, input[type='number']::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+/* Card / menu / preview backgrounds follow the dock style (over the window's acrylic). */
+:root[data-style='liquidGlass'] body.card-surface { background: rgba(20, 20, 24, 0.35); }
+:root[data-style='iosGlass'] body.card-surface { background: rgba(44, 44, 50, 0.22); }
+:root[data-style='clear'] body.card-surface { background: rgba(20, 20, 24, 0.14); }
+:root[data-style='black'] body.card-surface { background: rgba(14, 14, 16, 0.94); }
+:root[data-style='midnight'] body.card-surface { background: rgba(10, 16, 42, 0.78); }
+:root[data-style='white'] body.card-surface { background: rgba(248, 248, 250, 0.86); }
+:root[data-style='white'] { --fg: rgba(0,0,0,.9); --fg-2: rgba(0,0,0,.6); --fg-3: rgba(0,0,0,.4); --surface: rgba(0,0,0,.05); --surface-hover: rgba(0,0,0,.08); --surface-press: rgba(0,0,0,.12); --border: rgba(0,0,0,.12); }
+:root.auto-theme[data-style='white'] { --fg: inherit; }
+/* No visible scrollbars anywhere (user preference); every area still scrolls. */
+* { scrollbar-width: none; }
+::-webkit-scrollbar { display: none; width: 0; height: 0; }
+:focus:not(:focus-visible) { outline: none; }
+/* Game mode (D-011): freeze every animation and transition. */
+.yield *, .yield *::before, .yield *::after { animation-play-state: paused !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+}
+/* Windows that follow the system theme (Settings): light tokens when Windows apps use light mode. */
+@media (prefers-color-scheme: light) {
+  :root.auto-theme {
+    --fg: rgba(0, 0, 0, 0.9);
+    --fg-2: rgba(0, 0, 0, 0.6);
+    --fg-3: rgba(0, 0, 0, 0.4);
+    --surface: rgba(255, 255, 255, 0.55);
+    --surface-hover: rgba(0, 0, 0, 0.06);
+    --surface-press: rgba(0, 0, 0, 0.12);
+    --border: rgba(0, 0, 0, 0.1);
+    --warn: #b25000;
+  }
+  :root.auto-theme nav { background: rgba(255, 255, 255, 0.25) !important; }
+}
+:root.auto-theme body { background: #1e1e22; }
+:root.auto-theme nav { background: rgba(255, 255, 255, 0.04); }
+@media (prefers-color-scheme: light) {
+  :root.auto-theme body { background: #f4f4f6; }
+}
+
+/* Toggle switch (Settings and cards). */
+input.sw { appearance: none; width: 38px; height: 22px; border-radius: 11px; background: var(--surface-press); position: relative; transition: background var(--t-med) var(--ease-out); }
+input.sw::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 9px; background: white; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform var(--t-med) var(--ease-spring); }
+input.sw:checked { background: var(--accent); }
+input.sw:checked::after { transform: translateX(16px); }
