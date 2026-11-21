@@ -214,7 +214,7 @@ pub fn detect(folder: &str) -> Result<Project, String> {
     p.port = readme_port(&dir);
     let has = |n: &str| dir.join(n).exists();
 
-    // 1. A start/stop script of its own (e.g. bin/household-app.ps1 start|stop).
+    // 1. A start/stop script of its own (e.g. bin/app.ps1 start|stop).
     let script = ["bin", "scripts", "."].iter().flat_map(|sub| std::fs::read_dir(dir.join(sub)).ok().into_iter().flatten().flatten())
         .map(|e| e.path()).find(|f| f.extension().is_some_and(|x| x.eq_ignore_ascii_case("ps1")) && {
             let t = read(f).to_lowercase();
