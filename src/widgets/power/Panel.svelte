@@ -2,7 +2,9 @@
   // Full-screen power panel: big cards over a blurred desktop,
   // in Strata's style. The blur is DWM acrylic on the overlay window; this draws the cards.
   import { ipc } from '../../lib/ipc'
-  import { settings } from '../../lib/stores.svelte'
+  import { settings, startStores } from '../../lib/stores.svelte'
+  // The panel lives in its own window: load settings there too (the Dim backdrop depends on them).
+  startStores()
   const dim = $derived(settings.value?.powerBackdrop === 'dim')
   import { POWER_ACTIONS, formatUptime } from './actions'
 

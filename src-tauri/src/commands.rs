@@ -54,11 +54,25 @@ pub fn card_action(app: AppHandle, dock: String, uid: String, action: String, da
     let _ = app.emit_to(dock.as_str(), "card:action", serde_json::json!({ "uid": uid, "action": action, "data": data }));
 }
 
+/// Runs on its own STA thread: ShellExecute can take seconds (SmartScreen, a cold Office start, a
+/// network path) and must never block the main thread, which would freeze every Strata window.
 #[tauri::command]
-pub fn launch(app: AppHandle, state: State<AppState>, target: String, args: Option<String>) -> R<()> {
-    let r = system::launch(&target, args.as_deref());
-    if r.is_ok() && state.cards.is_open() {
-        state.cards.hide(&app);
+pub async fn launch(app: AppHandle, target: String, args: Option<String>) -> R<()> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        unsafe { let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_APARTMENTTHREADED); }
+        let _ = tx.send(system::launch(&target, args.as_deref()));
+    });
+    // Still starting after 8 s: report success (the launch is in progress, not failed).
+    let r = rx.recv_timeout(std::time::Duration::from_secs(8)).unwrap_or(Ok(()));
+    if r.is_ok() {
+        let h = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let st = h.state::<AppState>();
+            if st.cards.is_open() {
+                st.cards.hide(&h);
+            }
+        });
     }
     r
 }
@@ -670,6 +684,9 @@ pub async fn api(service: String, url: String, method: Option<String>, body: Opt
 pub async fn google_connect(id: String, secret: String) -> R<()> { crate::google::connect(&id, &secret) }
 #[tauri::command]
 pub fn google_status() -> bool { crate::google::connected() }
+/// A Google OAuth client is saved (signing in again needs no pasting).
+#[tauri::command]
+pub fn google_client_saved() -> bool { matches!(crate::secrets::get("google-client"), Ok(Some(_))) }
 #[tauri::command]
 pub fn google_disconnect() { crate::google::disconnect() }
 #[tauri::command]
@@ -771,14 +788,43 @@ pub fn vault_list() -> Vec<crate::vault::Entry> { crate::vault::list() }
 #[tauri::command]
 pub fn vault_state() -> bool { crate::vault::is_unlocked() }
 #[tauri::command]
-pub async fn vault_unlock(window: WebviewWindow, minutes: Option<u64>) -> R<String> {
+pub async fn vault_unlock(window: WebviewWindow, minutes: Option<u64>, password: Option<String>) -> R<String> {
     let h = window.hwnd().map_err(|e| e.to_string())?.0 as isize;
-    crate::vault::unlock(h, minutes.unwrap_or(5))
+    crate::vault::unlock(h, minutes.unwrap_or(5), password)
+}
+#[tauri::command]
+pub fn vault_lock_info() -> crate::vault::LockInfo { crate::vault::lock_info() }
+#[tauri::command]
+pub async fn vault_set_master(password: Option<String>, hello_too: bool) -> R<()> { crate::vault::set_master(password, hello_too) }
+#[tauri::command]
+pub async fn vault_import(path: String, delete_after: bool) -> R<crate::vault::ImportResult> { crate::vault::import_csv(&path, delete_after) }
+#[tauri::command]
+pub async fn vault_export(path: String, format: String) -> R<usize> { crate::vault::export(&path, &format) }
+#[tauri::command]
+pub async fn vault_health(breaches: bool) -> R<Vec<crate::vault::Health>> { crate::vault::health(breaches) }
+#[tauri::command]
+pub async fn vault_attach(id: String, path: String) -> R<crate::vault::Entry> { crate::vault::attach_file(&id, &path) }
+#[tauri::command]
+pub async fn vault_file_save(id: String, path: String) -> R<()> { crate::vault::export_file(&id, &path) }
+#[tauri::command]
+pub fn vault_file_remove(id: String) -> R<()> { crate::vault::remove_file(&id) }
+#[tauri::command]
+pub fn vault_passphrase(words: usize) -> String { crate::vault::passphrase(words) }
+
+/// Native Open / Save dialog owned by the calling window. The card stays open meanwhile.
+#[tauri::command]
+pub async fn pick_file(app: AppHandle, window: WebviewWindow, save: bool, title: String, filters: Vec<(String, String)>, default_name: Option<String>) -> Option<String> {
+    let h = window.hwnd().map(|h| h.0 as isize).unwrap_or(0);
+    let st = app.state::<AppState>();
+    let was = st.cards.sticky.swap(true, std::sync::atomic::Ordering::SeqCst);
+    let r = crate::dialog::pick(h, save, &title, filters, default_name);
+    st.cards.sticky.store(was, std::sync::atomic::Ordering::SeqCst);
+    r
 }
 #[tauri::command]
 pub fn vault_lock() { crate::vault::lock() }
 #[tauri::command]
-pub fn vault_save(entry: crate::vault::Entry, secret: Option<String>, notes: Option<String>) -> R<crate::vault::Entry> { crate::vault::save(entry, secret, notes) }
+pub fn vault_save(entry: crate::vault::Entry, secret: Option<String>, notes: Option<String>, fields: Option<std::collections::BTreeMap<String, String>>) -> R<crate::vault::Entry> { crate::vault::save(entry, secret, notes, fields) }
 #[tauri::command]
 pub fn vault_delete(id: String) -> R<()> { crate::vault::delete(&id) }
 #[tauri::command]
@@ -787,3 +833,100 @@ pub fn vault_reveal(id: String) -> R<crate::vault::Secret> { crate::vault::revea
 pub fn vault_copy(id: String, field: String) -> R<()> { crate::vault::copy(&id, &field) }
 #[tauri::command]
 pub fn vault_generate(length: usize, symbols: bool) -> String { crate::vault::generate(length, symbols) }
+
+
+/// The media player the idle Now Playing tile offers: Spotify (desktop or Store) when installed.
+/// Returns (icon path, launch target), or None so the tile shows a neutral "Nothing playing".
+#[tauri::command]
+pub fn default_player() -> Option<(String, String)> {
+    let appdata = std::env::var("APPDATA").unwrap_or_default();
+    let exe = std::path::Path::new(&appdata).join("Spotify").join("Spotify.exe");
+    if exe.is_file() {
+        let p = exe.to_string_lossy().into_owned();
+        return Some((p, "spotify:".into()));
+    }
+    let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    let store = std::fs::read_dir(std::path::Path::new(&local).join("Packages")).ok()?
+        .flatten().any(|e| e.file_name().to_string_lossy().starts_with("SpotifyAB.SpotifyMusic_"));
+    store.then(|| (r"shell:AppsFolder\SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify".to_string(), "spotify:".to_string()))
+}
+
+#[tauri::command]
+pub async fn office_apps() -> Vec<crate::local::SuiteApp> { crate::local::office_apps() }
+
+/// Project Launcher (widget id "local-app"): status / start / stop of project `project` on dock
+/// item `uid`. Commands come from the saved settings only (D-033).
+#[tauri::command]
+pub async fn project_action(state: State<'_, AppState>, uid: String, project: Option<String>, action: String) -> R<bool> {
+    let p = crate::projects::find(&state.store.get(), &uid, project.as_deref().unwrap_or("main"))?;
+    match action.as_str() {
+        "status" => Ok(crate::projects::running(&p)),
+        "start" | "stop" => { crate::projects::act(&p, &action)?; Ok(action == "start") }
+        _ => Err("unknown action".into()),
+    }
+}
+#[tauri::command]
+pub async fn project_detect(folder: String) -> R<crate::projects::Project> { crate::projects::detect(&folder) }
+#[tauri::command]
+pub async fn project_clone(url: String, parent: String) -> R<String> { crate::projects::clone(&url, &parent) }
+#[tauri::command]
+pub async fn pick_folder(app: AppHandle, window: WebviewWindow, title: String) -> Option<String> {
+    let h = window.hwnd().map(|h| h.0 as isize).unwrap_or(0);
+    let st = app.state::<AppState>();
+    let was = st.cards.sticky.swap(true, std::sync::atomic::Ordering::SeqCst);
+    let r = crate::dialog::pick_folder(h, &title);
+    st.cards.sticky.store(was, std::sync::atomic::Ordering::SeqCst);
+    r
+}
+
+/// Save text (meeting notes as Markdown, ...) to a file the user picks in a Save dialog. The page
+/// never chooses the path itself. Returns the path, or None when cancelled.
+#[tauri::command]
+pub async fn save_text_as(app: AppHandle, window: WebviewWindow, title: String, default_name: String, text: String) -> R<Option<String>> {
+    let h = window.hwnd().map(|h| h.0 as isize).unwrap_or(0);
+    let st = app.state::<AppState>();
+    let was = st.cards.sticky.swap(true, std::sync::atomic::Ordering::SeqCst);
+    let ext = default_name.rsplit_once('.').map(|x| x.1.to_string()).unwrap_or_else(|| "txt".into());
+    let p = crate::dialog::pick(h, true, &title, vec![(format!("{} file", ext.to_uppercase()), format!("*.{ext}")), ("All files".into(), "*.*".into())], Some(default_name));
+    st.cards.sticky.store(was, std::sync::atomic::Ordering::SeqCst);
+    match p {
+        Some(p) => { std::fs::write(&p, text).map_err(|e| e.to_string())?; Ok(Some(p)) }
+        None => Ok(None),
+    }
+}
+
+/// Uncaught errors from any Strata window, written to Strata.log (support: users can send the log).
+#[tauri::command]
+pub fn ui_error(window: WebviewWindow, message: String) {
+    log::error!("ui [{}]: {}", window.label(), message.chars().take(2000).collect::<String>());
+}
+
+/// Terminal widget (runs on its own thread; an elevation prompt can take a while).
+#[tauri::command]
+pub async fn terminal_run(app: AppHandle, command: String, shell: String, admin: bool, cwd: Option<String>) -> R<()> {
+    let r = tauri::async_runtime::spawn_blocking(move || system::terminal(&command, &shell, admin, cwd.as_deref())).await.map_err(|e| e.to_string())?;
+    if r.is_ok() {
+        let h = app.clone();
+        let _ = app.run_on_main_thread(move || { let st = h.state::<AppState>(); if st.cards.is_open() { st.cards.hide(&h); } });
+    }
+    r
+}
+/// Which shells exist here: (pwsh, Windows Terminal).
+#[tauri::command]
+pub fn terminal_info() -> (bool, bool) {
+    use std::os::windows::process::CommandExt;
+    let wt = std::env::var("LOCALAPPDATA").map(|l| std::path::Path::new(&l).join(r"Microsoft\WindowsApps\wt.exe").exists()).unwrap_or(false);
+    let pwsh = std::process::Command::new("where").arg("pwsh").creation_flags(0x0800_0000).output().map(|o| o.status.success()).unwrap_or(false);
+    (pwsh, wt)
+}
+
+/// Start-style search: installed apps (shell:AppsFolder).
+#[tauri::command]
+pub async fn start_apps() -> Vec<crate::system::startapps::StartApp> {
+    tauri::async_runtime::spawn_blocking(crate::system::startapps::apps).await.unwrap_or_default()
+}
+/// Start-style search: files from your main folders (when Everything isn't running).
+#[tauri::command]
+pub async fn quick_files(query: String, max: Option<usize>) -> Vec<crate::system::startapps::FileHit> {
+    tauri::async_runtime::spawn_blocking(move || crate::system::startapps::files(&query, max.unwrap_or(8))).await.unwrap_or_default()
+}

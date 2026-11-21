@@ -186,7 +186,8 @@ pub fn activate(hwnd: i64, toggle_minimize: bool, komorebi_location: Option<(usi
     unsafe {
         if toggle_minimize && GetForegroundWindow() == h && !IsIconic(h).as_bool() {
             // A plain minimise is what komorebi handles (it un-tiles and re-tiles on restore).
-            let _ = ShowWindow(h, SW_MINIMIZE);
+            // Async: a hung app must never block the caller.
+            let _ = ShowWindowAsync(h, SW_MINIMIZE);
             return;
         }
         if let Some((m, w)) = komorebi_location {
@@ -194,9 +195,18 @@ pub fn activate(hwnd: i64, toggle_minimize: bool, komorebi_location: Option<(usi
             std::thread::sleep(std::time::Duration::from_millis(60));
         }
         if IsIconic(h).as_bool() {
-            let _ = ShowWindow(h, SW_RESTORE);
+            let _ = ShowWindowAsync(h, SW_RESTORE);
         }
-        let _ = SetForegroundWindow(h);
+        if !SetForegroundWindow(h).as_bool() || GetForegroundWindow() != h {
+            // Windows refuses foreground changes from a process that doesn't own the foreground
+            // (the dock never takes focus). A zero-distance synthetic mouse move makes Strata the
+            // last input receiver, which lifts the lock (an Alt tap would open apps' menu bars).
+            use windows::Win32::UI::Input::KeyboardAndMouse::*;
+            let nudge = INPUT { r#type: INPUT_MOUSE, Anonymous: INPUT_0 { mi: MOUSEINPUT { dwFlags: MOUSEEVENTF_MOVE, ..Default::default() } } };
+            SendInput(&[nudge], std::mem::size_of::<INPUT>() as i32);
+            let _ = SetForegroundWindow(h);
+            let _ = BringWindowToTop(h);
+        }
     }
 }
 

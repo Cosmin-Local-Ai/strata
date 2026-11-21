@@ -16,6 +16,8 @@ enum Auth {
     Header(&'static str),
     /// `?<param>=<secret>` appended to the URL.
     Query(&'static str),
+    /// `Authorization: Basic base64(<user>:<secret>)`; the user comes from the widget settings.
+    Basic,
     /// Google OAuth access token (refreshed from the stored refresh token).
     Google,
     /// Claude Code's own sign-in (~/.claude/.credentials.json), read-only.
@@ -63,14 +65,18 @@ const SERVICES: &[Service] = &[
     Service { name: "google", prefixes: &[
         "https://analyticsdata.googleapis.com/", "https://analyticsadmin.googleapis.com/",
         "https://searchconsole.googleapis.com/", "https://www.googleapis.com/webmasters/", "https://gmail.googleapis.com/",
+        "https://www.googleapis.com/drive/v3/",
     ], auth: Auth::Google },
+    // Digi Storage (RCS & RDS) runs on Koofr: same API, own host. Email + an app password.
+    Service { name: "digistorage", prefixes: &["https://storage.rcs-rds.ro/api/v2/"], auth: Auth::Basic },
+    Service { name: "koofr", prefixes: &["https://app.koofr.net/api/v2/"], auth: Auth::Basic },
     Service { name: "claude", prefixes: &["https://api.anthropic.com/api/oauth/"], auth: Auth::Claude },
     Service { name: "codex", prefixes: &["https://chatgpt.com/backend-api/"], auth: Auth::Codex },
 ];
 
 /// Secret names the UI may *set* or *test for* (never read back), one per keyed service.
 pub fn is_service_secret(name: &str) -> bool {
-    SERVICES.iter().any(|s| s.name == name && matches!(s.auth, Auth::Bearer | Auth::Header(_) | Auth::Query(_)))
+    SERVICES.iter().any(|s| s.name == name && matches!(s.auth, Auth::Bearer | Auth::Header(_) | Auth::Query(_) | Auth::Basic))
 }
 
 fn matches(prefix: &str, url: &str) -> bool {
@@ -131,6 +137,14 @@ pub fn request(service: &str, method: &str, url: &str, body: Option<Value>, head
             let s = secret(svc.name)?;
             url.push(if url.contains('?') { '&' } else { '?' });
             url.push_str(&format!("{p}={}", urlencode(&s)));
+        }
+        Auth::Basic => {
+            // The user name (an email, not secret) comes from the widget's settings in a private
+            // header; the password stays in Credential Manager.
+            use base64::Engine;
+            let user = hdrs.iter().find(|(k, _)| k.eq_ignore_ascii_case("x-strata-user")).map(|(_, v)| v.clone()).ok_or("not-connected")?;
+            hdrs.retain(|(k, _)| !k.eq_ignore_ascii_case("x-strata-user"));
+            hdrs.push(("Authorization".into(), format!("Basic {}", base64::engine::general_purpose::STANDARD.encode(format!("{user}:{}", secret(svc.name)?)))));
         }
         Auth::Google => hdrs.push(("Authorization".into(), format!("Bearer {}", crate::google::access_token()?))),
         Auth::Claude => {

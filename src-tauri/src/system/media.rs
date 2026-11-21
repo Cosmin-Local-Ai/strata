@@ -196,7 +196,7 @@ impl Media {
     pub fn control(&self, action: &str) -> Result<(), String> {
         let s = self.0.lock().unwrap().session.clone().ok_or("nothing is playing")?;
         let r = match action {
-            "toggle" => s.TryTogglePlayPauseAsync(),
+            "toggle" | "playpause" => s.TryTogglePlayPauseAsync(),
             "next" => s.TrySkipNextAsync(),
             "prev" => s.TrySkipPreviousAsync(),
             "play" => s.TryPlayAsync(),

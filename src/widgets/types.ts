@@ -5,7 +5,7 @@ import type { DockItem, Layout } from '../lib/ipc'
 
 export type Category =
   | 'system' | 'productivity' | 'media' | 'apps' | 'komorebi' | 'clocks' | 'weather' | 'wallpaper'
-  | 'ai' | 'finance' | 'analytics' | 'social' | 'markets'
+  | 'ai' | 'finance' | 'analytics' | 'social' | 'markets' | 'office'
 
 export type MenuItem =
   | { label: string; action: string; danger?: boolean; checked?: boolean; disabled?: boolean }

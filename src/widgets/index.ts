@@ -19,6 +19,7 @@ import { AI } from './online/adapters/ai'
 import { FINANCE } from './online/adapters/finance'
 import { DEV } from './online/adapters/dev'
 import { MARKETS, SOCIAL } from './online/adapters/social'
+import { CLOUD } from './online/adapters/cloud'
 import EvTile from './everything/Tile.svelte'
 import EvCard from './everything/Card.svelte'
 import type { Component } from 'svelte'
@@ -44,6 +45,20 @@ import WeatherTile from './weather/Tile.svelte'
 import MediaTile from './media/Tile.svelte'
 import MediaCard from './media/Card.svelte'
 import MediaVariants from './media/Variants.svelte'
+import SuiteTile from './suite/Tile.svelte'
+import SuiteCard from './suite/Card.svelte'
+import MeetTile from './meetings/Tile.svelte'
+import TermTile from './terminal/Tile.svelte'
+import TermCard from './terminal/Card.svelte'
+import StartSearchTile from './startsearch/Tile.svelte'
+import StartSearchCard from './startsearch/Card.svelte'
+import CloudTile from './cloud/Tile.svelte'
+import CloudCard from './cloud/Card.svelte'
+import MeetCard from './meetings/Card.svelte'
+import LocalAppTile from './localapp/Tile.svelte'
+import LocalAppCard from './localapp/Card.svelte'
+import { projectsOf } from './localapp/state.svelte'
+import { idleTarget } from './media/player.svelte'
 import WeatherVariants from './weather/Variants.svelte'
 import ClockMore from './clocks2/More.svelte'
 import SysXTile from './sysextra/Tile.svelte'
@@ -189,8 +204,8 @@ export const widgets: WidgetDef[] = [
     // Nothing playing: the click opens the last player (Spotify by default) instead of an empty card.
     click: () => {
       if (media.value?.active) return true
-      const last = localStorage.getItem('np:last') || 'Spotify.exe'
-      invoke('launch', { target: /spotify/i.test(last) ? 'spotify:' : last.includes('!') ? `shell:AppsFolder\${last}` : last })
+      const t = idleTarget()
+      if (t) invoke('launch', { target: t })
     },
     menu: (item) => [{ label: 'Lyrics mode (lrclib.net)', action: 'lyrics', checked: !!item.options.lyrics }],
     onMenu: (item, a, ctx) => { if (a === 'lyrics') ctx.setOptions(item, { lyrics: !item.options.lyrics }) },
@@ -241,9 +256,10 @@ export const widgets: WidgetDef[] = [
   { id: 'stopwatch', name: 'Stopwatch', category: 'productivity', description: 'Start, pause and lap from the bar.', tile: ProdTile, card: ProdCard, shape: 'wide' },
   { id: 'currency', name: 'Currency', category: 'markets', description: 'Exchange rate and converter (ECB rates).', tile: MarketTile, card: MarketCard, shape: 'wide' },
   { id: 'crypto', name: 'Crypto', category: 'markets', description: 'Binance prices: BTC/USDT plus up to three pairs.', tile: MarketTile, card: MarketCard, shape: 'wide' },
-  { id: 'search', name: 'Search', category: 'apps', description: 'Search the web or open a folder by typing its path.', tile: SearchTileC as Component<any>, card: SearchCard, shape: 'square' },
+  { id: 'search', name: 'Web Search', category: 'apps', description: 'Search the web or open a folder by typing its path.', tile: SearchTileC as Component<any>, card: SearchCard, shape: 'square' },
   { id: 'everything', name: 'Everything', category: 'apps', description: 'Instant file search powered by your running Everything (voidtools).', tile: EvTile, card: EvCard, shape: 'square' },
   { id: 'flow-launcher', name: 'Flow Launcher', category: 'apps', description: 'Opens the Flow Launcher search box.', tile: EvTile, shape: 'square', click: () => { invoke('flow_toggle') } },
+  { id: 'now-playing-art', name: 'Now Playing Art', category: 'media', description: 'The cover art blurred behind the title and controls.', tile: MediaVariants, card: MediaCard, shape: 'wide' },
   { id: 'now-playing-compact', name: 'Now Playing Compact', category: 'media', description: 'Cover art and title.', tile: MediaVariants, card: MediaCard, shape: 'wide' },
   { id: 'now-playing-mini', name: 'Now Playing Mini', category: 'media', description: 'Round play button with a progress ring.', tile: MediaVariants, card: MediaCard, shape: 'square', click: () => true },
   { id: 'now-playing-bar', name: 'Now Playing Bar', category: 'media', description: 'Title over a progress bar, with skip.', tile: MediaVariants, card: MediaCard, shape: 'wide' },
@@ -258,8 +274,16 @@ export const widgets: WidgetDef[] = [
   { id: 'recently-opened', name: 'Recently Opened', category: 'apps', description: 'Files and folders you opened lately.', tile: FilesTile, card: FilesCard, shape: 'square' },
   { id: 'downloads', name: 'Downloads', category: 'apps', description: 'Newest downloads; the badge counts today\'s.', tile: FilesTile, card: FilesCard, shape: 'square' },
   { id: 'screenshots', name: 'Screenshots', category: 'apps', description: 'Your latest screenshots as thumbnails.', tile: FilesTile, card: FilesCard, shape: 'square' },
-  { id: 'commands', name: 'Commands', category: 'apps', description: 'Type a word to launch an app or run an action.', tile: FilesTile, card: FilesCard, shape: 'square' },
+  // Replaced by Start Search (apps, settings, files, web); kept so docks that have it keep working.
+  { id: 'commands', name: 'Commands', category: 'apps', description: 'Replaced by Start Search.', tile: StartSearchTile, card: StartSearchCard, shape: 'square', hidden: true },
+  { id: 'start-search', name: 'Start Search', category: 'apps', description: 'Search apps, settings, documents and the web, like the search in Start.', tile: StartSearchTile, card: StartSearchCard, shape: 'square' },
+  { id: 'terminal', name: 'Terminal', category: 'apps', description: 'Type a command and it opens in a terminal, already running (Ctrl+Enter: as administrator).', tile: TermTile, card: TermCard, shape: 'square',
+    middle: () => { invoke('terminal_run', { command: '', shell: 'powershell', admin: false, cwd: null }) } },
+  { id: 'cloud-storage', name: 'Cloud Storage', category: 'office', description: 'Your cloud accounts (Google Drive, Digi Storage) in one tile; click for space and files, then open either one.', tile: CloudTile, card: CloudCard, shape: 'square' },
+  { id: 'cloud-storage-wide', name: 'Cloud Storage (wide)', category: 'office', description: 'Each account with its usage percentage.', tile: CloudTile, card: CloudCard, shape: 'wide' },
+  { id: 'cloud-storage-large', name: 'Cloud Storage (large)', category: 'office', description: 'Each account with a usage bar and space used of total.', tile: CloudTile, card: CloudCard, shape: 'wide' },
   { id: 'screenshot-capture', name: 'Screenshot Capture', category: 'apps', description: 'Window, region and screen buttons on the dock; right-click for options (text recognition, saving).', tile: CaptureTile, card: FilesCard, shape: 'wide', click: () => {}, rightClick: (item, ctx, el) => { ctx.openCard(item, el); return false } },
+  { id: 'weather-card', name: 'Weather Card', category: 'weather', description: 'Conditions and city on a sky-coloured card with a large temperature and a colour icon.', tile: WeatherVariants, card: WeatherCard, shape: 'wide' },
   { id: 'weather-details', name: 'Weather Details', category: 'weather', description: 'Temperature, feels-like, humidity and wind.', tile: WeatherVariants, card: WeatherCard, shape: 'wide' },
   { id: 'today-forecast', name: 'Today & Forecast', category: 'weather', description: 'Today and the next three days.', tile: WeatherVariants, card: WeatherCard, shape: 'wide' },
   { id: 'weather-status', name: 'Weather Status', category: 'weather', description: 'Conditions in words with high and low.', tile: WeatherVariants, card: WeatherCard, shape: 'wide' },
@@ -268,6 +292,7 @@ export const widgets: WidgetDef[] = [
   { id: 'world-time', name: 'World Time', category: 'clocks', description: 'Digital times for your cities.', tile: ClockMore, card: ClockVCard, shape: 'wide' },
   { id: 'today', name: 'Today', category: 'clocks', description: 'Weekday, date and how much of today has passed.', tile: ClockMore, card: ClockVCard, shape: 'wide' },
   { id: 'segment-clock', name: 'Segment Clock', category: 'clocks', description: 'Seven-segment digits in your accent colour.', tile: ClockMore, card: ClockVCard, shape: 'wide' },
+  { id: 'time-date-weather', name: 'Time, Date & Weather', category: 'clocks', description: 'Time on a red block, the weekday and date, and the temperature.', tile: ClockMore, card: ClockVCard, shape: 'wide' },
   { id: 'clock-weather', name: 'Clock & Weather', category: 'clocks', description: 'Time with the current temperature.', tile: ClockMore, card: ClockVCard, shape: 'wide' },
   { id: 'calendar', name: 'Calendar', category: 'productivity', description: 'Google, Outlook and iCloud via secret iCal links, plus AI limit resets.', tile: Prod2Tile, card: Prod2Card, shape: 'wide' },
   { id: 'screen-time', name: 'Screen Time', category: 'productivity', description: 'Hour by hour, per app, today and this week.', tile: Prod2Tile, card: Prod2Card, shape: 'wide' },
@@ -276,11 +301,21 @@ export const widgets: WidgetDef[] = [
   { id: 'drives', name: 'Drives', category: 'system', description: 'Every drive at once, including USB.', tile: SysTile, card: SysCard, shape: 'wide' },
   { id: 'quick-utilities', name: 'Quick Utilities', category: 'apps', description: 'Terminal, PowerShell, Snipping Tool, Task Manager and other Windows tools.', tile: FilesTile, card: FilesCard, shape: 'square' },
   { id: 'dock-menu', name: 'Dock Menu', category: 'apps', description: 'Opens the dock menu (Widgets, Settings, Quit) without hunting for empty space.', tile: DockMenuTile, shape: 'square', click: (_i, _c, el) => { window.dispatchEvent(new CustomEvent('strata:dockmenu', { detail: el })) } },
+  { id: 'meeting-notes', name: 'Meeting Notes', category: 'productivity', description: 'Agenda, notes and action items per meeting, with a timer; export as Markdown.', tile: MeetTile, card: MeetCard, shape: 'square', title: () => 'Meeting Notes' },
+  { id: 'office', name: 'Microsoft Office', category: 'office', description: 'Word, Excel, PowerPoint, Outlook… one click each; pinned and recent documents.', tile: SuiteTile, card: SuiteCard, shape: 'wide', menu: (item) => [{ label: 'Show app icons', action: 'style', checked: item.options.style === 'apps' }], onMenu: (item, a, ctx) => { if (a === 'style') ctx.setOptions(item, { style: item.options.style === 'apps' ? 'icon' : 'apps' }) } },
+  { id: 'google-workspace', name: 'Google Workspace', category: 'office', description: 'Docs, Sheets, Slides, Drive, Gmail, Calendar; create new, pinned and recent files.', tile: SuiteTile, card: SuiteCard, shape: 'wide', menu: (item) => [{ label: 'Show app icons', action: 'style', checked: item.options.style === 'apps' }], onMenu: (item, a, ctx) => { if (a === 'style') ctx.setOptions(item, { style: item.options.style === 'apps' ? 'icon' : 'apps' }) } },
+  {
+    id: 'local-app', name: 'Project Launcher', category: 'apps',
+    description: 'Your own apps and GitHub projects in one place: add the ones you choose, then start, open and stop them.',
+    tile: LocalAppTile, card: LocalAppCard, shape: 'square',
+    title: (item) => { const l = projectsOf(item); return l.length === 1 ? l[0].name : 'Projects' },
+  },
+
   { id: 'vault', name: 'Vault', category: 'productivity', description: 'Passwords and API keys, one click to copy. Unlocks with Windows Hello; stored in Credential Manager.', tile: VaultTile, card: VaultCard, shape: 'square' },
 ]
 
 // Online widgets: one Tile/Card pair driven by adapters (online/adapters/*).
-const DESC: Record<string, string> = {"ai-limits":"Two chosen AI plans on one tile, with reset times.","claude-usage":"Claude session limit and reset, from your Claude Code sign-in.","claude-plan":"Claude session and weekly limits, most-used model.","chatgpt-usage":"Codex 5-hour and weekly limits, from your Codex sign-in.","gemini-usage":"Antigravity session and weekly limits.","grok-usage":"SuperGrok credits.","deepseek-balance":"DeepSeek balance and spend (pasted key).","glm-usage":"Z.ai GLM coding plan usage (pasted key).","opencode-usage":"Current OpenCode session from local history.","opencode-plan":"OpenCode tokens this week and top model.","cursor-usage":"Cursor usage (preview with sample data).","total-revenue":"30 days across your stores, monthly goal and pace.","github":"Unread GitHub notifications.","github-activity":"Contribution grid and streak.","github-overview":"Notifications, open PRs and stars.","linear":"Your open Linear issues.","supabase":"Supabase project health.","resend":"Emails sent and bounces.","dub":"Link clicks over 30 days.","plausible":"Visitors, pageviews and bounce rate.","datafast-chart":"DataFast visitors chart.","leetcode":"Solved problems by difficulty and streak.","search-console":"28-day clicks, impressions, top queries.","google-analytics":"GA4 users, sessions, pages, sources, realtime.","meta-ads":"Ad spend, clicks, CTR and campaigns.","x-profile":"Followers and posts.","youtube":"Subscribers, views and latest videos.","instagram":"Followers and recent posts.","tiktok":"Followers, likes and videos.","gmail":"Unread count; inbox, unread or starred with search.","yahoo-mail":"Unread count; inbox, unread or flagged with search (read-only).","stock-chart":"Intraday price chart for one ticker.","stock-watchlist":"Three tickers, refreshed every minute."}
+const DESC: Record<string, string> = {"ai-limits":"Two chosen AI plans on one tile, with reset times.","claude-usage":"Claude session limit and reset, from your Claude Code sign-in.","claude-plan":"Claude session and weekly limits, most-used model.","chatgpt-usage":"Codex 5-hour and weekly limits, from your Codex sign-in.","gemini-usage":"Antigravity session and weekly limits.","grok-usage":"SuperGrok credits.","deepseek-balance":"DeepSeek balance and spend (pasted key).","glm-usage":"Z.ai GLM coding plan usage (pasted key).","opencode-usage":"Current OpenCode session from local history.","opencode-plan":"OpenCode tokens this week and top model.","cursor-usage":"Cursor usage (preview with sample data).","total-revenue":"30 days across your stores, monthly goal and pace.","github":"Unread GitHub notifications.","github-activity":"Contribution grid and streak.","github-overview":"Notifications, open PRs and stars.","linear":"Your open Linear issues.","supabase":"Supabase project health.","resend":"Emails sent and bounces.","dub":"Link clicks over 30 days.","plausible":"Visitors, pageviews and bounce rate.","datafast-chart":"DataFast visitors chart.","leetcode":"Solved problems by difficulty and streak.","search-console":"28-day clicks, impressions, top queries.","google-analytics":"GA4 users, sessions, pages, sources, realtime.","meta-ads":"Ad spend, clicks, CTR and campaigns.","x-profile":"Followers and posts.","youtube":"Subscribers, views and latest videos.","instagram":"Followers and recent posts.","tiktok":"Followers, likes and videos.","gmail":"Unread count; inbox, unread or starred with search.","yahoo-mail":"Unread count; inbox, unread or flagged with search (read-only).","stock-chart":"Intraday price chart for one ticker.","stock-watchlist":"Three tickers, refreshed every minute.","google-drive":"Storage used and your recent, starred or shared Drive files.","digi-storage":"Digi Storage (RCS & RDS) space used and your latest files."}
 const ANALYTICS = new Set(['github', 'github-activity', 'github-overview', 'linear', 'supabase', 'resend', 'dub', 'plausible', 'datafast-chart', 'leetcode', 'search-console', 'google-analytics', 'meta-ads'])
 const onlineDefs: WidgetDef[] = [
   ...Object.entries(AI).map(([id, a]) => [id, a, 'ai'] as const),
@@ -288,6 +323,7 @@ const onlineDefs: WidgetDef[] = [
   ...Object.entries(DEV).map(([id, a]) => [id, a, ANALYTICS.has(id) ? 'analytics' : 'social'] as const),
   ...Object.entries(SOCIAL).map(([id, a]) => [id, a, 'social'] as const),
   ...Object.entries(MARKETS).map(([id, a]) => [id, a, 'markets'] as const),
+  ...Object.entries(CLOUD).map(([id, a]) => [id, a, 'office'] as const),
 ].map(([id, a, category]) => ({
   id, name: a.title, category: category as WidgetDef['category'],
   description: DESC[id] ?? (id.endsWith('-chart') ? 'Weekly revenue, change and a 14-day line.' : 'Today, week and 30-day revenue (read-only key).'),

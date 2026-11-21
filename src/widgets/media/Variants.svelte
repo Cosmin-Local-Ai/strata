@@ -1,11 +1,13 @@
 <script lang="ts">
   // Now Playing variants: compact (art + title), mini (round play button with a progress ring),
   // bar (title over a progress bar, with skip). All open the Now Playing card on click.
-  import { Music, Pause, Play, SkipForward } from '@lucide/svelte'
+  import { Music, Pause, Play, SkipBack, SkipForward } from '@lucide/svelte'
   import { invoke } from '@tauri-apps/api/core'
   import { iconUrl } from '../../lib/ipc'
   import { clock, media, startMediaAudio } from '../../lib/stores.svelte'
   import type { TileProps } from '../types'
+  import { lastTrack, openAndResume } from './player.svelte'
+  const lt = lastTrack()
   let { item }: TileProps = $props()
   startMediaAudio()
   const m = $derived(media.value)
@@ -18,7 +20,26 @@
   const R = 14, C = 2 * Math.PI * R
 </script>
 
-{#if !m?.active}
+{#if item.widget === 'now-playing-art' && (m?.active || lt.value)}
+  <!-- Cover art blurred behind the title and the controls; the last track while the player is closed. -->
+  {@const t = m?.active ? { title: m.title, artist: m.artist, art: m.art } : lt.value!}
+  <span class="art" class:off={!m?.active}>
+    {#if t.art}<img class="bg" src={t.art} alt="" />{/if}
+    <span class="shade"></span>
+    <span class="fg">
+      <span class="tt">{t.title}{t.artist ? ` · ${t.artist}` : ''}</span>
+      <span class="cs">
+        {#if m?.active}
+          <button onclick={(e) => ctl('prev', e)} aria-label="Previous"><SkipBack size={13} fill="currentColor" /></button>
+          <button onclick={(e) => ctl('playpause', e)} aria-label={m.playing ? 'Pause' : 'Play'}>{#if m.playing}<Pause size={14} fill="currentColor" />{:else}<Play size={14} fill="currentColor" />{/if}</button>
+          <button onclick={(e) => ctl('next', e)} aria-label="Next"><SkipForward size={13} fill="currentColor" /></button>
+        {:else}
+          <button onclick={(e) => { e.stopPropagation(); openAndResume() }} aria-label="Open the player and play"><Play size={14} fill="currentColor" /></button>
+        {/if}
+      </span>
+    </span>
+  </span>
+{:else if !m?.active}
   <span class="idle"><Music size={16} />{#if item.widget !== 'now-playing-mini'}<small>Nothing playing</small>{/if}</span>
 {:else if item.widget === 'now-playing-mini'}
   <button class="mini" onclick={(e) => ctl('playpause', e)} aria-label={m.playing ? 'Pause' : 'Play'} title={`${m.title} · ${m.artist}`}>
@@ -41,6 +62,15 @@
 {/if}
 
 <style>
+  .art { position: relative; width: 190px; height: 100%; border-radius: var(--tile-r); overflow: hidden; display: block; }
+  .art .bg { position: absolute; inset: -12px; width: calc(100% + 24px); height: calc(100% + 24px); object-fit: cover; filter: blur(9px) saturate(1.2); transform: scale(1.1); }
+  .art .shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.18), rgba(0,0,0,.42)); }
+  .art.off .bg { filter: blur(9px) saturate(0.6); }
+  .art .fg { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; height: 100%; padding: 0 10px; color: white; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+  .art .tt { max-width: 100%; font: 600 11.5px var(--font-display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .art .cs { display: flex; gap: 10px; }
+  .art .cs button { width: 22px; height: 20px; display: grid; place-items: center; border-radius: 6px; color: white; }
+  .art .cs button:hover { background: rgba(255,255,255,.18); }
   .idle { display: flex; align-items: center; gap: 6px; padding: 0 10px; height: 100%; color: var(--fg-3); }
   .idle small { font-size: 11.5px; }
   .mini { position: relative; width: 100%; height: 100%; display: grid; place-items: center; }

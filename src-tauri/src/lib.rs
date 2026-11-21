@@ -6,6 +6,8 @@ mod mail;
 mod services;
 mod toggles;
 mod vault;
+mod dialog;
+mod projects;
 mod commands;
 mod config;
 mod dock;
@@ -167,7 +169,7 @@ pub fn run() {
             commands::media_state, commands::media_control, commands::media_seek, commands::audio_state,
             commands::audio_set_volume, commands::audio_set_mute, commands::wifi_state, commands::net_info, commands::wifi_networks, commands::wifi_connect, commands::eq_rect, commands::windows_list, commands::window_activate, commands::window_close, commands::gallery_state, commands::gallery_pictures, commands::gallery_apply, commands::previews_set, commands::card_close_if, commands::preview_hover, commands::settings_reset, commands::secret_has, commands::secret_set, commands::secret_delete, commands::download_wallpaper, commands::http_get, commands::wallpaper_change_now, commands::tray_icons, commands::tray_click, commands::card_sticky, commands::we_control, commands::we_playlist, commands::audio_set_default, commands::audio_sessions, commands::audio_session_set,
             commands::sys_stats, commands::recycle_bin, commands::recycle_bin_empty, commands::theme_is_light, commands::theme_set_light,
-            commands::mic_muted, commands::mic_set_muted, commands::sys_action, commands::kb_layouts, commands::kb_set_layout, commands::battery, commands::launch_admin, commands::reveal, commands::audio_devices, commands::audio_device_set, commands::everything_search, commands::everything_running, commands::api, commands::google_connect, commands::google_status, commands::google_disconnect, commands::yahoo_login, commands::yahoo_mail, commands::yahoo_disconnect, commands::opencode_usage, commands::screen_time, commands::whatsapp, commands::folder_list, commands::folder_path, commands::toggles_get, commands::toggle_set, commands::brightness_get, commands::brightness_set, commands::capture_screen, commands::capture_window, commands::capture_region_begin, commands::capture_region_finish, commands::capture_region_cancel, commands::clipboard_text, commands::capture_temp_path, commands::calendars_list, commands::calendars_add, commands::calendars_remove, commands::calendars_fetch, commands::flow_toggle, commands::gamma_set, commands::gamma_reset, commands::autostart_get, commands::autostart_set, commands::capture_save_set, commands::vault_list, commands::vault_state, commands::vault_unlock, commands::vault_lock, commands::vault_save, commands::vault_delete, commands::vault_reveal, commands::vault_copy, commands::vault_generate
+            commands::mic_muted, commands::mic_set_muted, commands::sys_action, commands::kb_layouts, commands::kb_set_layout, commands::battery, commands::launch_admin, commands::reveal, commands::audio_devices, commands::audio_device_set, commands::everything_search, commands::everything_running, commands::api, commands::google_connect, commands::google_status, commands::google_disconnect, commands::yahoo_login, commands::yahoo_mail, commands::yahoo_disconnect, commands::opencode_usage, commands::screen_time, commands::whatsapp, commands::folder_list, commands::folder_path, commands::toggles_get, commands::toggle_set, commands::brightness_get, commands::brightness_set, commands::capture_screen, commands::capture_window, commands::capture_region_begin, commands::capture_region_finish, commands::capture_region_cancel, commands::clipboard_text, commands::capture_temp_path, commands::calendars_list, commands::calendars_add, commands::calendars_remove, commands::calendars_fetch, commands::flow_toggle, commands::gamma_set, commands::gamma_reset, commands::autostart_get, commands::autostart_set, commands::capture_save_set, commands::vault_list, commands::vault_state, commands::vault_unlock, commands::vault_lock, commands::vault_save, commands::vault_delete, commands::vault_reveal, commands::vault_copy, commands::vault_generate, commands::default_player, commands::vault_lock_info, commands::vault_set_master, commands::vault_import, commands::vault_export, commands::vault_health, commands::vault_attach, commands::vault_file_save, commands::vault_file_remove, commands::vault_passphrase, commands::pick_file, commands::office_apps, commands::project_action, commands::project_detect, commands::project_clone, commands::pick_folder, commands::terminal_run, commands::terminal_info, commands::start_apps, commands::google_client_saved, commands::quick_files, commands::save_text_as, commands::ui_error
         ])
         .on_window_event(|window, event| {
             // Close popups on focus loss, but only once they really had focus: when Windows refuses
@@ -222,9 +224,13 @@ pub fn run() {
 
             // Komorebi live state (also re-applies the ignore rule on every connect).
             let h = app.handle().clone();
-            komorebi::start(move |st| {
+            let h2 = app.handle().clone();
+            komorebi::start_with_recovery(move |st| {
                 *h.state::<AppState>().kstate.lock().unwrap() = st.clone();
                 let _ = h.emit("komorebi:state", st);
+            }, move || {
+                let h3 = h2.clone();
+                let _ = h2.run_on_main_thread(move || h3.state::<AppState>().docks.recreate());
             });
 
             // Shell events arrive inside the window procedure; forward them so it never blocks.

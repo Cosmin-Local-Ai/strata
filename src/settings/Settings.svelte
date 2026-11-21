@@ -4,6 +4,7 @@
   import { invoke } from '@tauri-apps/api/core'
   import { AppWindow, Gamepad2, Info, Monitor, Palette, PanelBottom, PanelBottomClose as Taskbar, Sparkles } from '@lucide/svelte'
   import { settings, startStores } from '../lib/stores.svelte'
+  import { notesFor, renderNotes } from '../lib/changelog'
   import Row from './Row.svelte'
 
   startStores()
@@ -45,19 +46,27 @@
   invoke<boolean>('autostart_get').then((v) => (autostart = v))
   let version = $state('')
   import('@tauri-apps/api/app').then((m) => m.getVersion()).then((v) => (version = v))
+  // Updates: show what changed first, install on request.
   let updateMsg = $state(''), updating = $state(false)
+  let pending = $state<{ version: string; notes: string; install: () => Promise<void> } | null>(null)
   async function checkUpdate() {
     updating = true; updateMsg = 'Checking…'
     try {
       const { check } = await import('@tauri-apps/plugin-updater')
       const u = await check()
       if (!u) { updateMsg = 'You have the latest version'; return }
-      updateMsg = `Installing ${u.version}…`
-      await u.downloadAndInstall()
-      const { relaunch } = await import('@tauri-apps/plugin-process')
-      await relaunch()
+      updateMsg = ''
+      pending = { version: u.version, notes: u.body ?? '', install: async () => {
+        updating = true; updateMsg = `Installing ${u.version}…`
+        try {
+          await u.downloadAndInstall()
+          const { relaunch } = await import('@tauri-apps/plugin-process')
+          await relaunch()
+        } catch (e) { updateMsg = `Couldn't install: ${String(e).slice(0, 80)}` } finally { updating = false }
+      } }
     } catch (e) { updateMsg = `Couldn't check: ${String(e).slice(0, 80)}` } finally { updating = false }
   }
+  const currentNotes = $derived(version ? notesFor(version) : '')
   async function set(patch: Record<string, unknown>) {
     error = ''
     try { settings.value = await invoke('settings_update', { patch }) } catch (e) { error = String(e) }
@@ -231,8 +240,20 @@
           <Row label="Updates" tip="Checks the Strata releases on GitHub. Updates are signed; Strata verifies them before installing.">
             <button class="btn" onclick={checkUpdate} disabled={updating}>{updateMsg || 'Check for updates'}</button>
           </Row>
+          {#if pending}
+            <div class="notes">
+              <div class="nh"><strong>Strata {pending.version} is available</strong><span class="sp"></span>
+                <button class="btn" onclick={() => (pending = null)} disabled={updating}>Later</button>
+                <button class="btn primary" onclick={() => pending?.install()} disabled={updating}>{updating ? updateMsg : 'Install and restart'}</button>
+              </div>
+              <div class="md">{@html renderNotes(pending.notes || 'No notes were published for this version.')}</div>
+            </div>
+          {/if}
           <Row label="Your data" tip="Settings, notes and launchpad live in %APPDATA%\Strata. Nothing is sent anywhere.">%APPDATA%\Strata</Row>
         </div>
+        {#if currentNotes}
+          <div class="notes"><div class="nh"><strong>What's new in {version}</strong></div><div class="md">{@html renderNotes(currentNotes)}</div></div>
+        {/if}
         <button class="quit" onclick={() => invoke('quit')}>Quit Strata</button>
       {/if}
     </main>
@@ -284,4 +305,14 @@
   code { font-family: Consolas, monospace; font-size: 12px; background: var(--surface); padding: 1px 5px; border-radius: 4px; }
   .quit { padding: 7px 14px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); }
   .quit:hover { color: var(--danger); }
+  .notes { margin-top: 12px; padding: 14px 16px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); }
+  .nh { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .nh .sp { flex: 1; }
+  .nh .btn.primary { background: var(--accent); color: white; }
+  .md { font-size: 12.5px; line-height: 1.5; color: var(--fg-2); max-height: 360px; overflow-y: auto; }
+  .md :global(h4), .md :global(h5) { margin: 10px 0 4px; font-size: 12.5px; color: var(--fg); }
+  .md :global(ul) { margin: 0; padding-left: 18px; }
+  .md :global(li) { margin: 2px 0; }
+  .md :global(b) { color: var(--fg); }
+  .md :global(p) { margin: 4px 0; }
 </style>

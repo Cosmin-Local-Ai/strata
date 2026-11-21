@@ -174,6 +174,16 @@ impl Docks {
         self.for_each_glass(|g| g.set_style(style));
     }
 
+    /// Destroy and rebuild every dock (komorebi adopted one before its ignore rule existed; a new
+    /// window is created under the rule). Main thread only.
+    pub fn recreate(&self) {
+        let ids: Vec<String> = self.inner.lock().unwrap().keys().cloned().collect();
+        for id in ids {
+            self.destroy(&id);
+        }
+        self.sync();
+    }
+
     fn create(&self, d: &Display, s: &Settings) -> tauri::Result<()> {
         static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let label = format!("dock-{}", NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
@@ -209,6 +219,7 @@ impl Docks {
         let inst = self.inner.lock().unwrap().remove(id);
         if let Some(inst) = inst {
             let hwnd = HWND(inst.hwnd as _);
+            winstyle::unpin(hwnd);
             if inst.appbar {
                 appbar::unregister(hwnd);
             }
@@ -240,6 +251,9 @@ impl Docks {
             (HWND(inst.hwnd as _), inst.label.clone(), inst.glass.clone(), inst.appbar, inst.ready, unchanged)
         };
         if unchanged {
+            // Same window geometry, but padding / spacing / width settings may have changed: the UI
+            // still needs the new layout (skipping this made those sliders do nothing).
+            let _ = self.app.emit_to(label.as_str(), "dock:layout", layout);
             return;
         }
         if !ready {
@@ -247,6 +261,7 @@ impl Docks {
             winstyle::cloak(hwnd, true);
             winstyle::uncloak_after(hwnd, 4000);
         }
+        winstyle::pin(hwnd, RECT { bottom: target.top + win_h, ..target });
         unsafe {
             let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), target.left, target.top, target.right - target.left, win_h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
         }
@@ -267,6 +282,7 @@ impl Docks {
             // window where the shell actually granted space, not at the raw monitor edge.
             let want_y = match layout.edge { Edge::Top => granted.top, Edge::Bottom => granted.bottom - win_h };
             if want_y != target.top {
+                winstyle::pin(hwnd, RECT { left: target.left, top: want_y, right: target.right, bottom: want_y + win_h });
                 unsafe {
                     let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), target.left, want_y, target.right - target.left, win_h, SWP_NOACTIVATE);
                 }

@@ -22,7 +22,7 @@
   const digits = $derived(`${hh}${mm}${item.options.seconds ? String(n.getSeconds()).padStart(2, '0') : ''}`.split(''))
 
   let w = $state<Weather | null>(null)
-  $effect(() => { if (id === 'clock-weather') return watchWeather(item.options.place ?? DEFAULT_PLACE, (v) => (w = v)) })
+  $effect(() => { if (id === 'clock-weather' || id === 'time-date-weather') return watchWeather(item.options.place ?? DEFAULT_PLACE, (v) => (w = v)) })
   const wd = $derived(w ? describe(w.current.code, w.current.day) : null)
 </script>
 
@@ -44,6 +44,13 @@
       </svg>
     {/each}
   </span>
+{:else if id === 'time-date-weather'}
+  <!-- Time on a red block, weekday + day number, temperature in a round badge. -->
+  <span class="tdw">
+    <span class="tb">{hh}:{mm}</span>
+    <span class="dt"><small>{n.toLocaleDateString(undefined, { weekday: 'short' })}</small><b>{n.getDate()}</b></span>
+    <span class="tp" title={wd?.text ?? ''}>{w ? `${Math.round(w.current.temp)}°` : '–'}</span>
+  </span>
 {:else if id === 'clock-weather'}
   <span class="row"><strong class="big">{hh}:{mm}</strong>{#if w && wd}<span class="wx"><wd.icon size={15} strokeWidth={1.9} />{Math.round(w.current.temp)}°</span>{/if}</span>
 {/if}
@@ -54,6 +61,14 @@
   small { font-size: 10px; color: var(--fg-3); font-weight: 600; letter-spacing: .03em; }
   strong { font: 600 13px var(--font-display); font-variant-numeric: tabular-nums; }
   .big { font-size: 15px; }
+  .tdw { display: flex; align-items: center; gap: 7px; height: 100%; padding: 0 5px; }
+  .tb { height: calc(100% - 8px); display: grid; place-items: center; padding: 0 10px; border-radius: calc(var(--tile-r) * 0.8); background: linear-gradient(180deg, #ff5a4e, #e8322a);
+        color: white; font: 700 calc(var(--tile) * 0.36) / 1 var(--font-display); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; box-shadow: inset 0 1px 0 rgba(255,255,255,.25); text-shadow: none; }
+  .dt { display: flex; flex-direction: column; align-items: center; line-height: 1.05; }
+  .dt small { font-size: 10.5px; color: var(--fg-2); font-weight: 600; letter-spacing: 0; }
+  .dt b { font: 700 calc(var(--tile) * 0.34) / 1 var(--font-display); }
+  .tp { width: calc(var(--tile) - 12px); height: calc(var(--tile) - 12px); border-radius: 50%; display: grid; place-items: center; background: var(--surface-press);
+        font: 600 calc(var(--tile) * 0.26) / 1 var(--font-display); font-variant-numeric: tabular-nums; }
   .prog { width: 46px; height: 5px; border-radius: 3px; background: var(--surface-press); overflow: hidden; }
   .prog i { display: block; height: 100%; background: var(--accent); }
   .seg { display: flex; align-items: center; gap: 2px; padding: 0 12px; height: 100%; }

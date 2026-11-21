@@ -2,7 +2,8 @@
 
 A glassy, widget-packed dock for Windows 11. It replaces the taskbar with a floating (or full-width)
 bar of live tiles: running apps with window previews, now playing with lyrics, weather, system stats,
-calendar, AI usage limits, analytics, mail, a password vault and more than 120 other widgets. Click a
+calendar, AI usage limits, analytics, mail, Office and Google Workspace launchers, cloud storage, a
+password vault (with import from Google, Apple and Chromium browsers) and more than 130 other widgets. Click a
 tile and a card opens right there to do things, instead of sending you to Windows Settings.
 
 - **Light on resources.** A native Rust core with the system WebView2 for the interface. About 100 MB
@@ -60,8 +61,18 @@ Online widgets (Stripe, GitHub, Google Analytics, Gmail, Yahoo Mail, Meta Ads, Y
 connect form in their card with exact steps and a link to the page where you create the key.
 Everything is stored in Windows Credential Manager under `Strata/…` (you can see and delete entries
 in Control Panel → Credential Manager) and is sent only to that service. Google widgets use your own
-Google Cloud OAuth client (read-only scopes); Yahoo Mail uses an app password and never marks mail as
-read.
+Google Cloud OAuth client (read-only scopes; Google Drive lists file names and dates, never contents);
+Yahoo Mail and Digi Storage use an app password, and Yahoo Mail never marks mail as read.
+
+### Vault
+
+Logins, API keys, secure notes, cards, Wi-Fi networks, ID documents, recovery codes and small files.
+Secrets live in Credential Manager (larger items and files in DPAPI-encrypted files under
+`%APPDATA%\Strata\vault`). Import a CSV exported from Google Password Manager, Apple Passwords /
+iCloud Keychain, Vivaldi, Chrome, Edge, Firefox, Bitwarden or 1Password; export to CSV or JSON. The
+health report flags weak, reused and old passwords and can check them against Have I Been Pwned
+without sending them (k-anonymity: only 5 characters of each hash leave the PC). Unlock with Windows
+Hello, an optional master password, or both.
 
 ## Build from source
 

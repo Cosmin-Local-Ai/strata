@@ -6,6 +6,7 @@ pub mod everything;
 pub mod icons;
 pub mod media;
 pub mod misc;
+pub mod startapps;
 pub mod stats;
 pub mod net;
 pub mod netinfo;
@@ -24,7 +25,7 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// Open a file, shortcut, exe, folder, URL or `shell:AppsFolder\<AUMID>` the way Explorer would.
 pub fn launch(target: &str, args: Option<&str>) -> Result<(), String> {
-    let t = HSTRING::from(expand_env(target));
+    let t = HSTRING::from(resolve_app_path(target));
     let a = args.map(HSTRING::from);
     let r = unsafe {
         ShellExecuteW(None, w!("open"), &t, a.as_ref().map(|a| PCWSTR(a.as_ptr())).unwrap_or(PCWSTR::null()), PCWSTR::null(), SW_SHOWNORMAL)
@@ -34,6 +35,33 @@ pub fn launch(target: &str, args: Option<&str>) -> Result<(), String> {
     } else {
         Err(format!("Windows could not open {target} (code {})", r.0 as isize))
     }
+}
+
+/// Expand %VARS% and repair paths into versioned app folders. Squirrel-installed apps (Discord,
+/// Slack, GitHub Desktop, ...) live in `<root>\app-1.2.3\Name.exe` and delete that folder on every
+/// update, so a pinned path goes stale within days. Prefer the stable launcher `<root>\Name.exe`
+/// when the app ships one, otherwise the newest `app-*` folder that has the exe.
+pub fn resolve_app_path(path: &str) -> String {
+    let p = expand_env(path);
+    let pb = std::path::Path::new(&p);
+    let (Some(file), Some(dir)) = (pb.file_name(), pb.parent()) else { return p };
+    let Some(dir_name) = dir.file_name().map(|d| d.to_string_lossy().to_lowercase()) else { return p };
+    if !dir_name.starts_with("app-") || !dir_name[4..].starts_with(|c: char| c.is_ascii_digit()) {
+        return p;
+    }
+    let Some(root) = dir.parent() else { return p };
+    let stub = root.join(file);
+    if stub.is_file() {
+        return stub.to_string_lossy().into_owned();
+    }
+    if pb.is_file() {
+        return p;
+    }
+    let ver = |n: &str| n[4..].split('.').map(|x| x.parse::<u64>().unwrap_or(0)).collect::<Vec<_>>();
+    let newest = std::fs::read_dir(root).ok().into_iter().flatten().flatten()
+        .filter_map(|e| { let n = e.file_name().to_string_lossy().to_lowercase(); (n.starts_with("app-") && e.path().join(file).is_file()).then(|| (ver(&n), e.path().join(file))) })
+        .max_by(|a, b| a.0.cmp(&b.0));
+    newest.map(|(_, f)| f.to_string_lossy().into_owned()).unwrap_or(p)
 }
 
 pub fn expand_env(s: &str) -> String {
@@ -119,4 +147,41 @@ pub fn reveal(target: &str) -> Result<(), String> {
 /// Seconds since boot.
 pub fn uptime() -> u64 {
     unsafe { windows::Win32::System::SystemInformation::GetTickCount64() / 1000 }
+}
+
+/// Terminal widget: open a terminal running `command` (empty = just a prompt). Windows Terminal when
+/// installed, else a console window. `shell`: "pwsh" | "powershell" | "cmd". PowerShell gets the
+/// command base64-encoded (-EncodedCommand), so quotes, `;` and `&` reach it untouched.
+pub fn terminal(command: &str, shell: &str, admin: bool, cwd: Option<&str>) -> Result<(), String> {
+    use base64::Engine;
+    let ps_exe = if shell == "pwsh" { "pwsh.exe" } else { "powershell.exe" };
+    let inner: String = match shell {
+        "cmd" => if command.trim().is_empty() { "cmd.exe".into() } else { format!("cmd.exe /k {}", command) },
+        _ => {
+            if command.trim().is_empty() {
+                format!("{ps_exe} -NoLogo")
+            } else {
+                let utf16: Vec<u8> = command.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+                format!("{ps_exe} -NoLogo -NoExit -EncodedCommand {}", base64::engine::general_purpose::STANDARD.encode(utf16))
+            }
+        }
+    };
+    let dir = cwd.map(expand_env).filter(|d| std::path::Path::new(d).is_dir())
+        .unwrap_or_else(|| std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\".into()));
+    let wt = std::env::var("LOCALAPPDATA").map(|l| std::path::Path::new(&l).join(r"Microsoft\WindowsApps\wt.exe")).ok().filter(|p| p.exists());
+    // Windows Terminal treats `;` as its own command separator: escape it for cmd lines (PowerShell's
+    // are base64 and contain none).
+    let (file, params) = match wt {
+        Some(w) => (w.to_string_lossy().into_owned(), format!("-w 0 new-tab -d \"{}\" {}", dir, inner.replace(';', r"\;"))),
+        None => {
+            let (exe, rest) = inner.split_once(' ').map(|(a, b)| (a.to_string(), b.to_string())).unwrap_or((inner.clone(), String::new()));
+            (exe, rest)
+        }
+    };
+    let f = HSTRING::from(file);
+    let p = HSTRING::from(params);
+    let d = HSTRING::from(dir);
+    let verb = if admin { w!("runas") } else { w!("open") };
+    let r = unsafe { ShellExecuteW(None, verb, &f, &p, &d, SW_SHOWNORMAL) };
+    if r.0 as isize > 32 { Ok(()) } else { Err(format!("Could not open a terminal (code {})", r.0 as isize)) }
 }

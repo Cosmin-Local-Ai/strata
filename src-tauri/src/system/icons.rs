@@ -26,10 +26,20 @@ fn worker() -> &'static Mutex<Sender<Job>> {
                 unsafe {
                     let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
                 }
-                let mut cache: HashMap<(String, u32), Option<Vec<u8>>> = HashMap::new();
+                // Successes are kept; failures only for a minute (an app that is mid-update or a shell
+                // that is still starting gets another try instead of a letter until restart).
+                let mut cache: HashMap<(String, u32), (Option<Vec<u8>>, std::time::Instant)> = HashMap::new();
                 for (path, size, reply) in rx {
                     let key = (path.to_lowercase(), size);
-                    let png = cache.entry(key).or_insert_with(|| extract(&path, size).map_err(|e| log::debug!("icon {path}: {e}")).ok()).clone();
+                    let fresh = cache.get(&key).filter(|(png, t)| png.is_some() || t.elapsed().as_secs() < 60).map(|(png, _)| png.clone());
+                    let png = match fresh {
+                        Some(png) => png,
+                        None => {
+                            let png = extract(&path, size).map_err(|e| log::debug!("icon {path}: {e}")).ok();
+                            cache.insert(key, (png.clone(), std::time::Instant::now()));
+                            png
+                        }
+                    };
                     let _ = reply.send(png);
                 }
             })
@@ -47,7 +57,7 @@ pub fn get(path: &str, size: u32) -> Option<Vec<u8>> {
 
 fn extract(path: &str, size: u32) -> windows::core::Result<Vec<u8>> {
     unsafe {
-        let item: IShellItemImageFactory = SHCreateItemFromParsingName(&HSTRING::from(super::expand_env(path)), None)?;
+        let item: IShellItemImageFactory = SHCreateItemFromParsingName(&HSTRING::from(super::resolve_app_path(path)), None)?;
         let hbm = item.GetImage(SIZE { cx: size as i32, cy: size as i32 }, SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK)?;
         let wic: IWICImagingFactory = CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)?;
         let bmp = wic.CreateBitmapFromHBITMAP(hbm, HPALETTE::default(), WICBitmapUseAlpha);

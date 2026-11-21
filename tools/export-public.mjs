@@ -7,7 +7,7 @@ import path from 'node:path'
 const SRC = path.resolve(import.meta.dirname, '..')
 const DST = path.resolve(SRC, '..', 'strata-public')
 const INCLUDE = [
-  '.github', '.gitignore', '.vscode/extensions.json', 'LICENSE', 'README.md', 'index.html', 'package.json', 'package-lock.json',
+  '.github', '.gitignore', '.vscode/extensions.json', 'LICENSE', 'README.md', 'CHANGELOG.md', 'index.html', 'package.json', 'package-lock.json',
   'svelte.config.js', 'tsconfig.json', 'tsconfig.app.json', 'tsconfig.node.json', 'vite.config.ts',
   'public', 'src', 'guard', 'tray', 'src-tauri', 'tools/export-public.mjs',
 ]

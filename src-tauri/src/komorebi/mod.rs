@@ -310,12 +310,35 @@ fn read_chunk(p: &Pipe, buf: &mut [u8]) -> Option<usize> {
 }
 
 /// Start the subscription thread. `emit` receives every changed state (including offline).
-pub fn start(emit: impl Fn(&KState) + Send + 'static) {
+/// Does komorebi's state list any window of this process (adopted before the ignore rule existed)?
+fn manages_self(st: &KState) -> bool {
+    let me = std::env::current_exe().ok().and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase())).unwrap_or_else(|| "strata.exe".into());
+    st.monitors.iter().flat_map(|m| &m.workspaces).flat_map(|w| &w.windows).any(|w| w.exe.to_lowercase() == me)
+}
+
+/// Start the subscription thread. `emit` receives every changed state (including offline).
+/// `self_managed` runs (at most once per komorebi instance) when komorebi turns out to be tiling a
+/// Strata window: at log-in komorebi can start after the dock exists, adopt it, and only then
+/// accept the ignore rule. The caller recreates its windows so the rule applies to them.
+pub fn start_with_recovery(emit: impl Fn(&KState) + Send + 'static, self_managed: impl Fn() + Send + 'static) {
+    start_inner(emit, Some(Box::new(self_managed)))
+}
+
+fn start_inner(emit: impl Fn(&KState) + Send + 'static, self_managed: Option<Box<dyn Fn() + Send>>) {
     std::thread::Builder::new()
         .name("strata-komorebi".into())
         .spawn(move || {
             let mut last = KState::default();
+            let mut recovered = false;
             let mut announce = |s: KState, last: &mut KState| {
+                if s.online && !recovered && manages_self(&s) {
+                    recovered = true;
+                    log::warn!("komorebi is managing a Strata window; recreating it under the ignore rule");
+                    if let Some(f) = &self_managed { f(); }
+                }
+                if !s.online {
+                    recovered = false;
+                }
                 if &s != last {
                     emit(&s);
                     *last = s;

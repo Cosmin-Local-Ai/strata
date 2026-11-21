@@ -81,6 +81,9 @@ export type Adapter = {
   fetch: (o: Record<string, any>, ctx: { tab?: string; query?: string }) => Promise<View>
 }
 
+/** A limit's reset time in ms (accepts ISO strings, seconds or ms). */
+export const resetAt = (r: string | number | null | undefined) => r == null ? NaN : typeof r === 'number' ? (r < 1e12 ? r * 1000 : r) : Date.parse(r)
+
 /** Cached results shared between the dock and the card (localStorage is shared by both windows). */
 type Cached = { at: number; view?: View; error?: string; connected: boolean }
 const KEY = (id: string, opts: Record<string, any>, tab?: string, q?: string) => `svc:${id}:${JSON.stringify(opts)}:${tab ?? ''}:${q ?? ''}`
@@ -97,7 +100,10 @@ export function useService(id: string, a: Adapter, opts: () => Record<string, an
     const key = KEY(id, o, c.tab, c.query)
     const cached: Cached | null = (() => { try { return JSON.parse(localStorage.getItem(key) ?? 'null') } catch { return null } })()
     if (cached) { st.view = cached.view ?? st.view; st.error = cached.error ?? ''; st.connected = cached.connected }
-    if (!force && cached && Date.now() - cached.at < a.every * 0.9) return
+    // A limit that has reset since this reading was taken makes the reading stale (AI plans reset on
+    // their own schedule, sometimes early as a gift): fetch now instead of showing old usage.
+    const passed = (cached?.view?.limits ?? []).some((l) => { const t = resetAt(l.resets); return isFinite(t) && t > cached!.at && t <= Date.now() })
+    if (!force && !passed && cached && Date.now() - cached.at < a.every * 0.9) return
     const my = ++seq
     st.loading = true
     try {
@@ -117,6 +123,13 @@ export function useService(id: string, a: Adapter, opts: () => Record<string, an
       if (my === seq) st.loading = false
     }
   }
+  // Re-fetch shortly after the next reset time in the current reading.
+  $effect(() => {
+    const next = Math.min(...(st.view?.limits ?? []).map((l) => resetAt(l.resets)).filter((t) => isFinite(t) && t > Date.now()))
+    if (!isFinite(next) || next - Date.now() > 2 ** 31 - 1) return
+    const t = setTimeout(() => load(true), next - Date.now() + 20_000)
+    return () => clearTimeout(t)
+  })
   $effect(() => {
     opts(); ctx()
     load()

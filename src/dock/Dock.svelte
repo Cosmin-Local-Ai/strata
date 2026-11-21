@@ -23,6 +23,8 @@
   let dragUid = $state<string | null>(null)
   let order = $state<DockItem[] | null>(null)
   let body: HTMLDivElement | undefined = $state()
+  // Scrolling row inside the body; it reaches into the headroom so magnified tiles aren't clipped.
+  let track: HTMLDivElement | undefined = $state()
   const items = $derived(order ?? (settings.value?.items ?? []).filter((i) => registry[i.widget]))
 
   function dragOver(uid: string) {
@@ -83,7 +85,7 @@
 
   // Right-click on the dock itself (not a tile), or the Dock Menu widget.
   function dockMenu(e: MouseEvent) {
-    if (e.target !== body) return
+    if (e.target !== body && e.target !== track) return
     e.preventDefault()
     openDockMenu({ x: e.clientX - 1, y: e.clientY - 1, w: 2, h: 2 })
   }
@@ -121,7 +123,7 @@
     if (def.id === 'apps') return 1
     const tile = layout ? layout.bodyHeight * 0.78 : 44
     const w = el.offsetWidth
-    const centre = el.offsetLeft + w / 2 - (body?.scrollLeft ?? 0)
+    const centre = el.offsetLeft + w / 2 - (track?.scrollLeft ?? 0)
     // Distance from the pointer to the tile, measured from a centre band as wide as the tile minus
     // one icon: a wide tile under the pointer gets the full effect, like an icon does.
     const d = Math.max(0, Math.abs(mouseX - centre) - Math.max(0, w / 2 - tile / 2))
@@ -131,6 +133,33 @@
     const k = Math.min(1, tile / Math.max(tile, w)) * 0.9 + (w <= tile * 1.2 ? 0.1 : 0)
     return 1 + (maxScale - 1) * t * (def.shape === 'square' ? 1 : Math.max(0.25, k))
   }
+
+  // Minimal (compact) height: tiles built from stacked lines (value over label, two limit rows, a
+  // week strip) would spill out of a 28 px bar. Any column inside a tile that is taller than the tile
+  // shows only its first line. Checked when tiles change; nothing runs at other sizes.
+  const compact = $derived(!!layout && layout.bodyHeight < 40)
+  $effect(() => {
+    if (!compact || !track) return
+    const root = track
+    const tileH = Math.round((layout?.bodyHeight ?? 28) * 0.78)
+    let raf = 0
+    const fit = () => {
+      raf = 0
+      root.querySelectorAll<HTMLElement>('[data-compact]').forEach((el) => el.removeAttribute('data-compact'))
+      for (const el of root.querySelectorAll<HTMLElement>('.frame *')) {
+        // scrollHeight: a column squeezed to the tile height still overflows it.
+        if (el.childElementCount < 2 || Math.max(el.offsetHeight, el.scrollHeight) <= tileH + 1) continue
+        const cs = getComputedStyle(el)
+        const column = (cs.display.includes('flex') && cs.flexDirection.startsWith('column')) || (cs.display.includes('grid') && el.children[0] instanceof HTMLElement && el.children[1] instanceof HTMLElement && (el.children[1] as HTMLElement).offsetTop > (el.children[0] as HTMLElement).offsetTop + 2)
+        if (column) el.setAttribute('data-compact', '')
+      }
+    }
+    const later = () => { if (!raf) raf = requestAnimationFrame(fit) }
+    const mo = new MutationObserver(later)
+    mo.observe(root, { childList: true, subtree: true, characterData: true })
+    later()
+    return () => { mo.disconnect(); cancelAnimationFrame(raf); root.querySelectorAll('[data-compact]').forEach((el) => el.removeAttribute('data-compact')) }
+  })
 
   let lastExtra = 0
   let repaint = $state(false)
@@ -156,7 +185,7 @@
   // Drag the dock by an empty spot into the top or bottom half of the screen to move it there.
   let dragEdge = $state<{ startY: number; moved: boolean } | null>(null)
   function edgeDown(e: PointerEvent) {
-    if (e.button !== 0 || e.target !== body || editing) return
+    if (e.button !== 0 || (e.target !== body && e.target !== track) || editing) return
     dragEdge = { startY: e.screenY, moved: false }
     body?.setPointerCapture(e.pointerId)
   }
@@ -262,8 +291,9 @@
          onmouseleave={() => { hovered = false; mouseX = null; dockPointer.x = null; scheduleHide() }} oncontextmenu={dockMenu}
          onpointerdown={edgeDown} onpointermove={(e) => { edgeMove(e); onMove(e) }} onpointerup={(e) => { edgeUp(e); onUp(e) }}
          onclickcapture={(e) => { if (suppressClick) { e.stopPropagation(); e.preventDefault() } }}
-         onwheelcapture={(e) => { if (settings.value?.wheelScrollsDock && !e.ctrlKey && body && body.scrollWidth > body.clientWidth) { e.preventDefault(); e.stopPropagation(); body.scrollBy({ left: (e.deltaY + e.deltaX) * 1.2, behavior: 'smooth' }) } }}
-         onwheel={(e) => { if (!e.defaultPrevented && body && body.scrollWidth > body.clientWidth) { e.preventDefault(); body.scrollBy({ left: e.deltaY + e.deltaX, behavior: 'smooth' }) } }}>
+         onwheelcapture={(e) => { if (settings.value?.wheelScrollsDock && !e.ctrlKey && track && track.scrollWidth > track.clientWidth) { e.preventDefault(); e.stopPropagation(); track.scrollBy({ left: (e.deltaY + e.deltaX) * 1.2, behavior: 'smooth' }) } }}
+         onwheel={(e) => { if (!e.defaultPrevented && track && track.scrollWidth > track.clientWidth) { e.preventDefault(); track.scrollBy({ left: e.deltaY + e.deltaX, behavior: 'smooth' }) } }}>
+      <div class="track" bind:this={track} style="--room:{magnify ? layout.headroom : 0}px">
       {#each items as item (item.uid)}
         <div class="slot" class:grow={layout.fullWidth && item.widget === 'apps'} class:editing class:dragging={dragUid === item.uid} bind:this={frames[item.uid]} animate:flip={{ duration: 160 }}
              role="listitem" onpointerdown={(e) => tileDown(e, item.uid)}>
@@ -272,6 +302,7 @@
                      scale={scaleFor(item.uid)} showName={settings.value?.hoverNames ?? true} />
         </div>
       {/each}
+      </div>
     </div>
   </main>
 {/if}
@@ -286,13 +317,21 @@
   main.style-black, main.style-midnight { --tile-bg: rgba(255,255,255,.06); }
   main.style-clear { --tile-bg: transparent; --tile-bg-hover: rgba(255,255,255,.10); --tile-bg-active: rgba(255,255,255,.16); text-shadow: 0 1px 3px rgba(0,0,0,.55); }
   main.style-clear :global(svg) { filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
-  .body { display: flex; align-items: center; gap: var(--gap); height: var(--body-h); padding: 0 var(--pad); max-width: var(--max-w);
-          border-radius: calc(var(--body-h) * 0.42); overflow-x: auto; overflow-y: visible; scrollbar-width: none; }
+  .body { display: flex; align-items: stretch; height: var(--body-h); max-width: var(--max-w); border-radius: calc(var(--body-h) * 0.42); }
   .body.full { width: var(--max-w); }
+  /* The row scrolls sideways (which clips vertically too), so it is extended by the magnification
+     headroom on the side tiles grow into: magnified icons have room instead of being cut off. */
+  .track { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--gap); padding: var(--room) var(--pad) 0; margin-top: calc(-1 * var(--room));
+           height: calc(100% + var(--room)); box-sizing: border-box; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  main.top .track { padding: 0 var(--pad) var(--room); margin: 0 0 calc(-1 * var(--room)); }
+  .body.full .track { width: 100%; }
+  /* GPU yield (games, local AI): the glass steps aside; a plain background keeps the dock readable. */
+  main.yield .body { background: rgba(24, 24, 28, 0.82); box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+  main.yield.style-white .body { background: rgba(246, 246, 248, 0.9); box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
   .slot { position: relative; display: flex; }
   /* Full width / Minimal: the Apps slot absorbs the free space, giving left and right groups like a classic bar. */
   .slot.grow { flex: 1 1 auto; }
-  .body { mask-image: var(--fade, none); }
+  .track { mask-image: var(--fade, none); }
   .slot { touch-action: none; }
   .body { transition: transform 240ms var(--ease-out), opacity 240ms var(--ease-out); }
   .body.hidden { transform: translateY(calc(100% + var(--dist) + 6px)); opacity: 0; }
@@ -305,6 +344,8 @@
   main.compact :global(.date), main.compact :global(.a), main.compact :global(.text .a) { display: none; }
   main.compact :global(.time) { font-size: 12.5px; }
   main.compact :global(.clock) { flex-direction: row; gap: 6px; }
+  main.compact :global([data-compact] > :not(:first-child)) { display: none !important; }
+  main.compact :global(.frame) { overflow: hidden; }
   .slot.editing { cursor: grab; animation: wiggle 0.28s ease-in-out infinite alternate; }
   .slot.editing:nth-child(even) { animation-delay: -0.14s; }
   .slot.dragging { opacity: 0.4; }

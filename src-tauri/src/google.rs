@@ -8,7 +8,7 @@ use sha2::Digest;
 use std::io::{Read, Write};
 use std::sync::Mutex;
 
-const SCOPES: &str = "https://www.googleapis.com/auth/analytics.readonly https://www.googleapis.com/auth/webmasters.readonly https://www.googleapis.com/auth/gmail.readonly openid email";
+const SCOPES: &str = "https://www.googleapis.com/auth/analytics.readonly https://www.googleapis.com/auth/webmasters.readonly https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.metadata.readonly openid email";
 
 static TOKEN: Mutex<Option<(String, std::time::Instant)>> = Mutex::new(None);
 
@@ -67,8 +67,11 @@ pub fn disconnect() {
 
 /// Opens the browser to Google's consent page and waits (up to 5 minutes) for the redirect.
 pub fn connect(id: &str, secret: &str) -> Result<(), String> {
-    let id = id.trim();
-    let secret = secret.trim();
+    // Empty fields: sign in again with the client saved last time (e.g. to grant a new scope).
+    let saved: Option<Client> = if id.trim().is_empty() && secret.trim().is_empty() {
+        crate::secrets::get("google-client").ok().flatten().and_then(|s| serde_json::from_str(&s).ok())
+    } else { None };
+    let (id, secret) = match &saved { Some(c) => (c.id.as_str(), c.secret.as_str()), None => (id.trim(), secret.trim()) };
     if id.is_empty() || secret.is_empty() { return Err("Paste both the client ID and the client secret".into()) }
     crate::secrets::set("google-client", &serde_json::to_string(&Client { id: id.into(), secret: secret.into() }).unwrap())?;
     let listener = std::net::TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;

@@ -15,6 +15,23 @@ function remember(key: string, value: number, keepMs: number): number[] {
   localStorage.setItem(k, JSON.stringify(h))
   return h.map(([, v]) => v)
 }
+/** Track the window a limit belongs to. When the reset time moves on (the window ended, or the
+ *  vendor reset it early), the readings of the old window are dropped so nothing shows stale use.
+ *  Returns the start of the current window when known (the previous reset), else NaN. */
+function windowOf(key: string, resets: string | number | null | undefined): number {
+  const end = resetMs(resets)
+  if (!isFinite(end)) return NaN
+  const k = `ai-win:${key}`
+  let w: { end: number; start: number } | null = null
+  try { w = JSON.parse(localStorage.getItem(k) ?? 'null') } catch { /* fresh */ }
+  // Same window: reset times wobble by seconds between readings.
+  if (w && Math.abs(w.end - end) < 5 * 60_000) return w.start
+  const now = Date.now()
+  const start = w && w.end <= now ? w.end : w ? now : NaN
+  localStorage.setItem(k, JSON.stringify({ end, start }))
+  if (w) localStorage.removeItem(`ai-hist:${key}`)
+  return start
+}
 function history(key: string): [number, number][] {
   try { return JSON.parse(localStorage.getItem(`ai-hist:${key}`) ?? '[]') } catch { return [] }
 }
@@ -22,11 +39,14 @@ function history(key: string): [number, number][] {
 const resetMs = (r: string | number | null | undefined) => r == null ? NaN : typeof r === 'number' ? (r < 1e12 ? r * 1000 : r) : Date.parse(r)
 function view(limits: Limit[], histKey: string, extra: Partial<View> = {}): View {
   const main = limits[0]
+  const known = main ? windowOf(histKey, main.resets) : NaN
   const series = main ? remember(histKey, main.pct, 8 * 864e5) : []
-  // Window chart: 5-hour session (or weekly) from its start to its reset.
+  // Window chart: from the window's start to its reset. The start is the previous reset when we saw
+  // it (trial plans run 3-day windows, and resets can come early); otherwise the nominal length.
   const end = resetMs(main?.resets)
   const len = /week/i.test(main?.label ?? '') ? 7 * 864e5 : 5 * 3600_000
-  const win = main && isFinite(end) ? { start: end - len, end, label: main.label, points: history(histKey).filter(([t]) => t >= end - len) as [number, number][] } : undefined
+  const start = isFinite(known) && known > end - len ? known : end - len
+  const win = main && isFinite(end) ? { start, end, label: main.label, points: history(histKey).filter(([t]) => t >= start) as [number, number][] } : undefined
   return {
     value: main ? `${Math.round(main.pct)}%` : '–',
     label: main?.resets ? `resets in ${until(main.resets)}` : main?.label,

@@ -252,3 +252,42 @@ mod live_tests {
         println!("REFUSED foreign host: {:?}", crate::services::request("github", "GET", "https://evil.example.com/", None, Default::default()).err());
     }
 }
+
+// ---------------------------------------------------------------- Office apps
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuiteApp { pub id: String, pub name: String, pub target: String }
+
+fn app_path(exe: &str) -> Option<String> {
+    use windows::Win32::System::Registry::*;
+    for root in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
+        let key = windows::core::HSTRING::from(format!(r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{exe}"));
+        let mut buf = [0u16; 520];
+        let mut len = (buf.len() * 2) as u32;
+        let ok = unsafe { RegGetValueW(root, &key, None, RRF_RT_REG_SZ, None, Some(buf.as_mut_ptr() as _), Some(&mut len)) };
+        if ok.is_ok() {
+            let s = String::from_utf16_lossy(&buf[..(len as usize / 2).saturating_sub(1)]).trim_matches('"').to_string();
+            if Path::new(&s).is_file() { return Some(s) }
+        }
+    }
+    None
+}
+
+/// Microsoft Office / 365 apps installed on this PC: classic desktop apps (App Paths) and the Store
+/// apps (new Teams, new Outlook), in a fixed order.
+pub fn office_apps() -> Vec<SuiteApp> {
+    let mut v = vec![];
+    for (id, name, exe) in [("word", "Word", "WINWORD.EXE"), ("excel", "Excel", "EXCEL.EXE"), ("powerpoint", "PowerPoint", "POWERPNT.EXE"), ("outlook", "Outlook", "OUTLOOK.EXE"),
+                            ("onenote", "OneNote", "ONENOTE.EXE"), ("access", "Access", "MSACCESS.EXE"), ("publisher", "Publisher", "MSPUB.EXE"), ("visio", "Visio", "VISIO.EXE"), ("project", "Project", "WINPROJ.EXE")] {
+        if let Some(p) = app_path(exe) { v.push(SuiteApp { id: id.into(), name: name.into(), target: p }) }
+    }
+    let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    let pkg = |family: &str| Path::new(&local).join("Packages").join(family).is_dir();
+    if pkg("MSTeams_8wekyb3d8bbwe") { v.push(SuiteApp { id: "teams".into(), name: "Teams".into(), target: r"shell:AppsFolder\MSTeams_8wekyb3d8bbwe!MSTeams".into() }) }
+    if pkg("Microsoft.OutlookForWindows_8wekyb3d8bbwe") { v.push(SuiteApp { id: "outlook-new".into(), name: "Outlook (new)".into(), target: r"shell:AppsFolder\Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookforWindows".into() }) }
+    for od in [Path::new(&local).join(r"Microsoft\OneDrive\OneDrive.exe"), PathBuf::from(r"C:\Program Files\Microsoft OneDrive\OneDrive.exe")] {
+        if od.is_file() { v.push(SuiteApp { id: "onedrive".into(), name: "OneDrive".into(), target: od.to_string_lossy().into() }); break }
+    }
+    v
+}

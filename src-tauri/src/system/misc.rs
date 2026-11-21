@@ -194,52 +194,11 @@ fn restore_desktop(d: Desk) {
     }
 }
 
-// ---- With komorebi: show the desktop by switching to an empty workspace (komorebi hides the windows
-// its own way, exactly like a normal workspace switch); the second click switches back. Windows are
-// never minimised, so komorebi's layout, transparency and focus are untouched (minimising behind
-// komorebi's back dropped windows from its layout and left Chromium apps blank; see D-028).
-struct WsDesk { monitor: usize, back_to: usize, empty: usize }
-static WS_DESK: std::sync::Mutex<Option<WsDesk>> = std::sync::Mutex::new(None);
-
-/// (focused monitor, its focused workspace, first empty workspace on it)
-fn komorebi_focus() -> Option<(usize, usize, Option<usize>)> {
-    let o = crate::komorebi::komorebic(&["state"]).ok()?;
-    let v: serde_json::Value = serde_json::from_slice(&o.stdout).ok()?;
-    let mi = v["monitors"]["focused"].as_u64()? as usize;
-    let m = &v["monitors"]["elements"][mi];
-    let cur = m["workspaces"]["focused"].as_u64()? as usize;
-    let empty = m["workspaces"]["elements"].as_array()?.iter().enumerate().find(|(i, w)| {
-        *i != cur
-            && w["containers"]["elements"].as_array().map_or(true, |a| a.is_empty())
-            && w["floating_windows"]["elements"].as_array().map_or(true, |a| a.is_empty())
-            && w["monocle_container"].is_null()
-            && w["maximized_window"].is_null()
-    }).map(|(i, _)| i);
-    Some((mi, cur, empty))
-}
-
-/// Returns true when it handled Show Desktop through komorebi.
-fn show_desktop_komorebi() -> bool {
-    if !crate::util::process_running(&["komorebi.exe"]) { return false }
-    let Some((mi, cur, empty)) = komorebi_focus() else { return false };
-    let mut g = WS_DESK.lock().unwrap();
-    if let Some(d) = g.take() {
-        // Still on the empty workspace we switched to: go back. Otherwise you moved on yourself.
-        if d.monitor == mi && cur == d.empty {
-            let _ = crate::komorebi::komorebic(&["focus-monitor-workspace", &d.monitor.to_string(), &d.back_to.to_string()]);
-            log::info!("show-desktop: back to workspace {} on monitor {}", d.back_to, d.monitor);
-            return true;
-        }
-    }
-    let Some(empty) = empty else { return false };
-    let _ = crate::komorebi::komorebic(&["focus-monitor-workspace", &mi.to_string(), &empty.to_string()]);
-    log::info!("show-desktop: monitor {mi} workspace {cur} -> empty workspace {empty}");
-    *g = Some(WsDesk { monitor: mi, back_to: cur, empty });
-    true
-}
-
+// Show Desktop minimises every window (like Win+D) and the second click restores them, also with
+// komorebi running: you use it to see what komorebi does not tile (desktop, HYTE Nexus, widgets),
+// which a switch to an empty komorebi workspace never showed (D-029, replaces D-028's workspace
+// switch). Windows komorebi managed are handed back to it on restore (restore_desktop).
 pub fn show_desktop() {
-    if show_desktop_komorebi() { return }
     let mut g = DESK.lock().unwrap();
     if let Some(d) = g.take() {
         drop(g);

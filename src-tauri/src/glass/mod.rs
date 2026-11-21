@@ -404,6 +404,10 @@ impl Glass {
                         d.Trim();
                     }
                 }
+                // Clear to transparent: while yielding the dock paints a plain CSS background that
+                // always follows its real size. A frozen glass frame would keep the old size and
+                // position (tiles outside the glass, a stretched bar after toggling magnification).
+                if let Err(e) = g.clear() { log::warn!("glass clear failed: {e}"); }
                 log::info!("glass: yielding GPU");
                 return;
             }
@@ -538,6 +542,31 @@ impl Inner {
             self.ctx.CopySubresourceRegion(bgt, 0, (left - origin.x) as u32, (top - origin.y) as u32, 0, frame, 0, Some(&bx));
             self.ctx.GenerateMips(srv);
         }
+        Ok(())
+    }
+
+    /// Make the whole surface transparent (one cheap draw).
+    fn clear(&mut self) -> Result<()> {
+        let Some(surface) = self.surface.clone() else { return Ok(()) };
+        let (w, h) = self.size;
+        let region = RECT { left: 0, top: 0, right: w as i32, bottom: h as i32 };
+        unsafe {
+            let mut offset = POINT::default();
+            let tex: ID3D11Texture2D = surface.BeginDraw(Some(&region), &mut offset)?;
+            let mut rtv = None;
+            self.device.CreateRenderTargetView(&tex, None, Some(&mut rtv))?;
+            if let Some(rtv) = rtv {
+                // The surface may live in a shared atlas: clear only our rectangle.
+                let r = RECT { left: offset.x, top: offset.y, right: offset.x + w as i32, bottom: offset.y + h as i32 };
+                if let Ok(ctx1) = self.ctx.cast::<ID3D11DeviceContext1>() {
+                    ctx1.ClearView(&rtv, &[0.0, 0.0, 0.0, 0.0], Some(&[r]));
+                }
+            }
+            surface.EndDraw()?;
+            self.dcomp.Commit()?;
+        }
+        self.drawn = None;
+        self.surface_fresh = true;
         Ok(())
     }
 

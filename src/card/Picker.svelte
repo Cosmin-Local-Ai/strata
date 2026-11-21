@@ -12,7 +12,7 @@
   startStores()
 
   const CATS: { id: Category; label: string }[] = [
-    { id: 'apps', label: 'Apps & Files' }, { id: 'productivity', label: 'Productivity' }, { id: 'media', label: 'Media & Audio' },
+    { id: 'apps', label: 'Apps & Files' }, { id: 'office', label: 'Office & Cloud' }, { id: 'productivity', label: 'Productivity' }, { id: 'media', label: 'Media & Audio' },
     { id: 'system', label: 'System' }, { id: 'clocks', label: 'Clocks' }, { id: 'weather', label: 'Weather' },
     { id: 'wallpaper', label: 'Wallpaper' }, { id: 'komorebi', label: 'Komorebi' }, { id: 'ai', label: 'AI' },
     { id: 'finance', label: 'Finance' }, { id: 'analytics', label: 'Analytics' }, { id: 'social', label: 'Social & Mail' },

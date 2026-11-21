@@ -172,7 +172,7 @@ const leetcode: Adapter = {
 }
 
 // ---------------------------------------------------------------- Google (Analytics, Search Console, Gmail)
-const googleHelp = 'Uses your own Google Cloud app (read-only):\n1. console.cloud.google.com → create a project.\n2. Enable "Google Analytics Data API", "Google Analytics Admin API", "Google Search Console API" and "Gmail API".\n3. OAuth consent screen: External, add yourself as a test user.\n4. Credentials → Create OAuth client ID → Desktop app.\n5. Paste the client ID and secret here and sign in. One sign-in serves all Google widgets.'
+const googleHelp = 'Uses your own Google Cloud app (read-only):\n1. console.cloud.google.com → create a project.\n2. Enable "Google Analytics Data API", "Google Analytics Admin API", "Google Search Console API", "Gmail API" and "Google Drive API".\n3. OAuth consent screen: External, add yourself as a test user.\n4. Credentials → Create OAuth client ID → Desktop app.\n5. Paste the client ID and secret here and sign in. One sign-in serves all Google widgets.'
 const googleLink = 'https://console.cloud.google.com/apis/credentials'
 const g = (url: string, body?: unknown) => api<any>('google', url, body ? { method: 'POST', body } : {})
 

@@ -50,11 +50,42 @@ unsafe fn subclass_inner(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM, data: usi
             }
             return DefSubclassProc(hwnd, msg, wp, lp);
         }
+        WM_WINDOWPOSCHANGING => {
+            // A pinned window (the dock) only ever sits where Strata put it. Anything else trying to
+            // move or resize it (a tiling manager that adopted it during a start-up race, Windows
+            // cascading it to the centre) is overruled.
+            let wp_ = &mut *(lp.0 as *mut WINDOWPOS);
+            if let Some(r) = pinned(hwnd) {
+                if wp_.flags.0 & SWP_NOMOVE.0 == 0 || wp_.flags.0 & SWP_NOSIZE.0 == 0 {
+                    wp_.x = r.left;
+                    wp_.y = r.top;
+                    wp_.cx = r.right - r.left;
+                    wp_.cy = r.bottom - r.top;
+                }
+            }
+        }
         WM_MOUSEACTIVATE if s.no_activate => return LRESULT(MA_NOACTIVATE as isize),
         _ => {}
     }
     DefSubclassProc(hwnd, msg, wp, lp)
   }
+}
+
+static PINS: std::sync::Mutex<Vec<(isize, windows::Win32::Foundation::RECT)>> = std::sync::Mutex::new(Vec::new());
+
+fn pinned(hwnd: HWND) -> Option<windows::Win32::Foundation::RECT> {
+    PINS.lock().ok()?.iter().find(|p| p.0 == hwnd.0 as isize).map(|p| p.1)
+}
+
+/// Pin a window to `r` (physical px). Call before Strata's own SetWindowPos so that move is allowed.
+pub fn pin(hwnd: HWND, r: windows::Win32::Foundation::RECT) {
+    let mut g = PINS.lock().unwrap();
+    g.retain(|p| p.0 != hwnd.0 as isize);
+    g.push((hwnd.0 as isize, r));
+}
+
+pub fn unpin(hwnd: HWND) {
+    PINS.lock().unwrap().retain(|p| p.0 != hwnd.0 as isize);
 }
 
 pub fn apply(hwnd: HWND, s: ShellStyle) {

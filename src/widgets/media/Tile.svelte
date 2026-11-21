@@ -8,6 +8,7 @@
   import { media, startMediaAudio } from '../../lib/stores.svelte'
   import type { TileProps } from '../types'
   import { useLyrics } from './lyrics.svelte'
+  import { idlePlayer, lastTrack, maybeResume, openAndResume, rememberTrack } from './player.svelte'
   let { item }: TileProps = $props()
   startMediaAudio()
   const m = $derived(media.value)
@@ -34,11 +35,17 @@
     return () => { ro.disconnect(); body?.removeEventListener('scroll', send); invoke('eq_rect', { rect: null }) }
   })
 
-  // Remember the last player so the idle tile can open it again.
+  // Remember the last player so the idle tile can open it again. Before anything has played, offer
+  // Spotify only when it is installed; otherwise the tile just says nothing is playing.
   $effect(() => { if (m?.active && m.app) localStorage.setItem('np:last', m.app) })
-  const last = $derived((m?.active && m.app) || localStorage.getItem('np:last') || 'Spotify.exe')
-  const playerName = $derived(last.split(/[\!]/).pop()!.replace(/.exe$/i, '').replace(/^.*./, (x) => x).replace(/^SpotifyAB.SpotifyMusic_.*$/, 'Spotify'))
-  const playerIcon = $derived(/spotify/i.test(last) ? '%APPDATA%\Spotify\Spotify.exe' : last.includes('!') ? `shell:AppsFolder\${last}` : last)
+  $effect(() => { if (m?.active && m.title) rememberTrack({ app: m.app, title: m.title, artist: m.artist, art: m.art }) })
+  $effect(() => maybeResume(m))
+  const lt = lastTrack()
+  const p = idlePlayer()
+  // Re-read when the media state changes (that is when np:last can change).
+  const idle = $derived.by(() => { void m?.app; void m?.active; return p.value })
+  const playerName = $derived(idle?.name ?? '')
+  const playerIcon = $derived(idle?.icon ?? '')
   const ly = useLyrics(() => !!item.options.lyrics)
   const line = $derived(ly.lyrics?.synced[ly.index]?.text ?? '')
 </script>
@@ -65,11 +72,25 @@
     </span>
   </span>
 {:else}
-  <!-- Nothing playing: stay on the dock as a launcher for the last player (Spotify until something plays). -->
-  <span class="idle" title="Click to open {playerName}">
-    <span class="art"><img src={iconUrl(playerIcon, 64)} alt="" onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")} /></span>
-    <span class="text"><span class="t">{playerName}</span><span class="a">Click to open</span></span>
-  </span>
+  <!-- Nothing playing: stay on the dock as a launcher for the last player (Spotify if installed). -->
+  {#if lt.value && playerName}
+    <!-- Remembered track: the player is closed (or the PC restarted); play reopens it and resumes. -->
+    <span class="np idle-track" title="Open {playerName}">
+      <span class="art">{#if lt.value.art}<img src={lt.value.art} alt="" />{:else if !artFailed}<img src={iconUrl(playerIcon, 64)} alt="" onerror={() => (artFailed = true)} />{:else}<Music size={16} />{/if}</span>
+      <span class="text"><span class="t">{lt.value.title}</span><span class="a">{lt.value.artist || playerName}</span></span>
+      <span class="ctl"><button onclick={(e) => { e.stopPropagation(); openAndResume() }} aria-label="Open {playerName} and play"><Play size={16} /></button></span>
+    </span>
+  {:else if playerName}
+    <span class="idle" title="Click to open {playerName}">
+      <span class="art">{#if !artFailed}<img src={iconUrl(playerIcon, 64)} alt="" onerror={() => (artFailed = true)} />{:else}<Music size={16} />{/if}</span>
+      <span class="text"><span class="t">{playerName}</span><span class="a">Click to open</span></span>
+    </span>
+  {:else}
+    <span class="idle">
+      <span class="art"><Music size={16} /></span>
+      <span class="text"><span class="t">Nothing playing</span><span class="a">Play something to control it here</span></span>
+    </span>
+  {/if}
 {/if}
 
 <style>
@@ -92,6 +113,8 @@
   .ctl button:hover:not(:disabled) { background: var(--surface-hover); }
   .ctl button:active:not(:disabled) { transform: scale(0.9); }
   .ctl button:disabled { opacity: 0.35; }
+  .idle-track { opacity: 0.85; }
+  .idle-track .art img { filter: saturate(0.85); }
   .idle { display: flex; align-items: center; gap: 10px; padding: 0 12px 0 6px; height: 100%; opacity: 0.85; }
   .idle-old { display: grid; place-items: center; width: var(--tile); height: 100%; color: var(--fg-3); }
 </style>
