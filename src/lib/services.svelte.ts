@@ -15,7 +15,11 @@ export async function api<T = any>(service: string, url: string, opts: { method?
     if (m.includes('not-connected')) throw new NotConnected()
     throw new Error(m.replace(/^Error: /, ''))
   }
-  if (r.status === 401 || r.status === 403) throw new Error(`The key was rejected (${r.status}). Check it has read access.`)
+  if (r.status === 401 || r.status === 403) {
+    // Keep the service's reason (e.g. Google: "Drive API has not been used in project … or it is disabled").
+    const b = r.body, why = typeof b === 'string' ? b : b?.error?.message ?? b?.message ?? ''
+    throw new Error(`The key was rejected (${r.status}). Check it has read access.${why ? ` ${String(why).slice(0, 300)}` : ''}`)
+  }
   if (r.status === 429) throw new Error('Rate limited by the service; will retry.')
   if (r.status >= 400) {
     const b = r.body

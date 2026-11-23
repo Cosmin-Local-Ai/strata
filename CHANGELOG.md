@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.3 (23 Nov 2026)
+
+### Fixed
+- Cloud Storage: when Google sign-in works but the Google Drive API is turned off in your Google Cloud project, the card now says so, with a button to the page that turns it on (it used to ask you to sign in again, which didn't help). The full message is shown instead of being cut off.
+- Cloud Storage: a sign-in done while the card was closed shows up as soon as you open it again (accounts that aren't connected are re-checked on every open).
+- Cloud Storage square tile: the usage bars no longer run into the cloud icon.
+- Services in general: when a service refuses a key, its own reason is shown along with the message.
+
 ## 0.2.2 (23 Nov 2026)
 
 ### New

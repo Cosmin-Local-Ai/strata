@@ -75,7 +75,13 @@
         {/if}
       {:else if a.id === 'drive'}
         <div class="main static"><span class="logo"><HardDrive size={18} /></span><span class="tx"><strong>Google Drive</strong><small>{a.error ?? 'Not connected'}</small></span></div>
-        {#if clientSaved}
+        {#if a.fix}
+          <div class="row">
+            <button class="btn primary" onclick={() => ipc.launch(a.fix!.href)}>{a.fix.label}</button>
+            <button class="btn" onclick={() => refresh(ids, digiEmail)}>Refresh</button>
+          </div>
+          <p class="hint">Google Cloud Console → your project → Google Drive API → Enable. It can take a minute to apply.</p>
+        {:else if clientSaved}
           <button class="btn primary" disabled={busy === 'drive'} onclick={googleSignIn}>{busy === 'drive' ? 'Waiting for the browser…' : 'Sign in to Google'}</button>
           <p class="hint">Read-only: file names and dates, never contents. Enable the Google Drive API in your Google Cloud project first.</p>
         {:else}
@@ -117,6 +123,8 @@
   .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .tx strong { font-size: 13.5px; color: var(--fg); }
   .tx small { font-size: 11px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Not connected: the message is the point, let it wrap instead of cutting it off. */
+  .main.static .tx small { white-space: normal; line-height: 1.35; }
   .pc { font: 700 18px var(--font-display); color: var(--fg); font-variant-numeric: tabular-nums; }
   .bar { height: 7px; border-radius: 4px; background: var(--surface-press); overflow: hidden; }
   .bar i { display: block; height: 100%; border-radius: 4px; background: var(--c); }

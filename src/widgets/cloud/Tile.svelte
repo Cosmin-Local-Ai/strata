@@ -15,7 +15,7 @@
 
 {#if id === 'cloud-storage'}
   <span class="sq">
-    <Cloud size="46%" strokeWidth={1.9} />
+    <span class="ico"><Cloud size="100%" strokeWidth={1.9} /></span>
     <span class="bars">{#each accts as a (a.id)}<i style="--p:{pct(a) * 100}%; --c:{color(a.id)}" class:off={a.state !== 'ok'}></i>{/each}</span>
   </span>
 {:else if id === 'cloud-storage-wide'}
@@ -37,8 +37,11 @@
 {/if}
 
 <style>
-  .sq { position: relative; width: 100%; height: 100%; display: grid; place-items: center; }
-  .bars { position: absolute; left: 22%; right: 22%; bottom: 14%; display: flex; flex-direction: column; gap: 2px; }
+  /* Cloud and bars stacked as one centred group with a fixed gap, so the bars never run into the
+     cloud at any dock size. */
+  .sq { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 13%; }
+  .ico { width: 40%; aspect-ratio: 1; display: grid; flex: none; }
+  .bars { width: 52%; display: flex; flex-direction: column; gap: 2px; flex: none; }
   .bars i { display: block; height: 3px; border-radius: 2px; background: linear-gradient(90deg, var(--c) var(--p), var(--surface-press) var(--p)); }
   .bars i.off { opacity: 0.35; }
   .row { display: flex; align-items: center; gap: 12px; padding: 0 12px; height: 100%; }

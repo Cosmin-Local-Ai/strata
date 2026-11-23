@@ -9,6 +9,8 @@ export type Account = {
   name: string
   state: 'ok' | 'connect' | 'error'
   error?: string
+  /** A page that fixes the error (e.g. where to turn the Drive API on). */
+  fix?: { label: string; href: string }
   email?: string
   used: number
   total: number
@@ -38,7 +40,12 @@ async function drive(): Promise<Account> {
     }
   } catch (e) {
     const m = String((e as Error).message ?? e)
-    return { ...base, state: /40[13]|scope|insufficient/i.test(m) ? 'connect' : 'error', error: /40[13]|scope|insufficient/i.test(m) ? 'Sign in to Google again to allow Drive (read-only).' : m }
+    // Signed in, but the Drive API is off in your Google Cloud project: signing in again won't help.
+    if (/has not been used|is disabled|SERVICE_DISABLED|accessNotConfigured/i.test(m))
+      return { ...base, state: 'error', error: 'Signed in. Turn on the Google Drive API in your Google Cloud project, then refresh.',
+               fix: { label: 'Turn on the Drive API', href: 'https://console.cloud.google.com/apis/library/drive.googleapis.com' } }
+    const again = /\(401\)|insufficient|scope/i.test(m)
+    return { ...base, state: again ? 'connect' : 'error', error: again ? 'Sign in to Google again to allow Drive (read-only).' : m }
   }
 }
 
@@ -84,7 +91,8 @@ export async function refresh(ids: string[], digiEmail: string) {
 export function cloud(ids: () => string[], digiEmail: () => string) {
   $effect(() => {
     const i = ids(), e = digiEmail()
-    const stale = Date.now() - box.at > 10 * 60_000 || box.accounts.map((a) => a.id).join() !== i.join()
+    // Not connected yet (or failing): check again on every open, so a sign-in elsewhere shows up at once.
+    const stale = Date.now() - box.at > 10 * 60_000 || box.accounts.map((a) => a.id).join() !== i.join() || box.accounts.some((a) => a.state !== 'ok')
     if (stale) refresh(i, e)
     const t = setInterval(() => refresh(i, e), 10 * 60_000)
     return () => clearInterval(t)
