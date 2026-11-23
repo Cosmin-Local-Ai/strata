@@ -7,7 +7,8 @@
   import { iconUrl, ipc } from '../../lib/ipc'
   import { komorebi, settings } from '../../lib/stores.svelte'
   import type { TileProps } from '../types'
-  import { groupWindows, running, startWindows, windowsForPinned, type AppGroup } from './apps.svelte'
+  import { groupWindows, newWindow, running, startWindows, windowsForPinned, type AppGroup } from './apps.svelte'
+  import { notice } from '../../lib/notice'
   import { previewHover } from './hover'
   import { magnifyAt } from '../../lib/pointer.svelte'
   const btns: Record<string, HTMLElement> = {}
@@ -43,7 +44,8 @@
   function middle(g: AppGroup, e: MouseEvent) {
     if (e.button !== 1) return
     e.preventDefault(); e.stopPropagation()
-    ipc.launch(g.exe)
+    const [t, a] = newWindow(g.exe, g.key.startsWith('aumid:') ? g.icon : g.exe)
+    ipc.launch(t, a).catch(notice)
   }
   function menu(g: AppGroup, el: HTMLElement, e: MouseEvent) {
     e.preventDefault(); e.stopPropagation()

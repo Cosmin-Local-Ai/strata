@@ -24,6 +24,16 @@ export function groupKey(w: AppWindow) {
 export function matchName(path: string) {
   return (path.split(/[\\/]/).pop() ?? '').replace(/\.(exe|lnk)$/i, '').toLowerCase()
 }
+/** What to launch so a running app opens a *new window* instead of just coming to the front:
+ *  browsers, editors and Windows Terminal need an argument for it; others open one when started again. */
+export function newWindow(exe: string, fallback = exe): [string, string | undefined] {
+  const n = matchName(exe)
+  if (n === 'windowsterminal' || n === 'wt') return ['wt.exe', '-w new']
+  if (['chrome', 'msedge', 'brave', 'vivaldi', 'opera', 'chromium', 'code', 'cursor', 'windsurf'].includes(n)) return [exe, '--new-window']
+  if (['firefox', 'librewolf', 'zen', 'waterfox', 'floorp'].includes(n)) return [exe, '-new-window']
+  return [fallback, undefined]
+}
+
 /** Running windows belonging to a pinned path. */
 export function windowsForPinned(path: string, list: AppWindow[]) {
   // Store apps pinned by their Start entry: match the window's app ID.

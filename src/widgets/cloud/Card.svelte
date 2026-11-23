@@ -83,12 +83,14 @@
         {/if}
       {:else}
         <div class="main static"><span class="logo"><Cloud size={18} /></span><span class="tx"><strong>Digi Storage</strong><small>{a.error ?? 'Not connected'}</small></span></div>
-        <input bind:value={email} placeholder="Email you sign in with" spellcheck="false" />
-        <input bind:value={pass} type="password" placeholder="App password" autocomplete="off" />
-        <div class="row">
-          <button class="btn primary" disabled={busy === 'digi'} onclick={digiConnect}>{busy === 'digi' ? 'Connecting…' : 'Connect'}</button>
-          <button class="btn" onclick={() => ipc.launch(`${DIGI}/login?redirect=%2Fapp%2F`)}>Get an app password</button>
-        </div>
+        <form class="login" onsubmit={(e) => { e.preventDefault(); digiConnect() }}>
+          <label><span>Email</span><input bind:value={email} type="email" placeholder="you@example.com" spellcheck="false" autocomplete="off" /></label>
+          <label><span>App password</span><input bind:value={pass} type="password" placeholder="From Digi Storage → Preferences" autocomplete="new-password" /></label>
+          <div class="row">
+            <button class="btn primary" type="submit" disabled={busy === 'digi'}>{busy === 'digi' ? 'Connecting…' : 'Connect'}</button>
+            <button class="btn" type="button" onclick={() => ipc.launch(`${DIGI}/login?redirect=%2Fapp%2F`)}>Get an app password</button>
+          </div>
+        </form>
         <p class="hint">Digi Storage → your name → Preferences → Password → App passwords. It can be revoked any time.</p>
       {/if}
     </div>
@@ -126,7 +128,17 @@
   li button:hover { background: var(--surface-hover); }
   .fn { flex: 1; min-width: 0; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   li small { font-size: 10.5px; color: var(--fg-3); }
-  input { padding: 7px 9px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-press); outline: none; font-size: 12.5px; color: var(--fg); }
+  .login { display: flex; flex-direction: column; gap: 8px; margin-top: 2px; }
+  .login label { display: flex; flex-direction: column; gap: 4px; }
+  .login label span { font-size: 11px; font-weight: 600; color: var(--fg-2); }
+  .login input { width: 100%; box-sizing: border-box; height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border); background: rgba(0, 0, 0, 0.22);
+                 outline: none; font-size: 12.5px; color: var(--fg); transition: border-color var(--t-fast), background var(--t-fast); }
+  .login input::placeholder { color: var(--fg-3); }
+  .login input:hover { border-color: color-mix(in srgb, var(--fg) 25%, transparent); }
+  .login input:focus { border-color: var(--accent); background: rgba(0, 0, 0, 0.3); }
+  /* Windows' autofill paints filled boxes light blue with dark text: keep them like the others. */
+  .login input:-webkit-autofill { -webkit-text-fill-color: var(--fg); box-shadow: 0 0 0 40px #1d1d22 inset; caret-color: var(--fg); }
+  .login .row { margin-top: 2px; }
   .row { display: flex; gap: 6px; }
   .btn { padding: 6px 12px; border-radius: 8px; background: var(--surface-press); font-size: 12.5px; transition: background var(--t-fast), filter var(--t-fast); align-self: flex-start; }
   .btn:hover:not(:disabled) { background: var(--surface-hover); }

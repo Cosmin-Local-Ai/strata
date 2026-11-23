@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.2 (23 Nov 2026)
+
+### New
+- **Middle-click an app for a new window**: works for browsers (Chrome, Edge, Brave, Vivaldi, Opera, Firefox), VS Code / Cursor, Windows Terminal and Store apps too, on running apps, pinned apps and the "New window" menu item. Pinned apps with your own middle-click arguments keep them.
+
+### Fixed
+- Terminal: "Run as administrator" opened an empty admin terminal without your command, and afterwards "Run again" (and normal runs) could open a bare terminal too. Admin commands now run in an elevated PowerShell / CMD in the chosen folder; normal runs open as tabs in Strata's own Terminal window.
+- Cloud Storage: the Digi Storage sign-in boxes are labelled, show where you're typing, aren't repainted by Windows' autofill, and Enter connects.
+
 ## 0.2.1 (23 Nov 2026)
 
 ### New

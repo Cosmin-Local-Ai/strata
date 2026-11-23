@@ -82,7 +82,7 @@ import WallpaperTile from './wallpaper/Tile.svelte'
 import WallpaperCard from './wallpaper/Card.svelte'
 import AppsTile from './apps/Tile.svelte'
 import AppsCard from './apps/Card.svelte'
-import { groupWindows, running, windowsForPinned } from './apps/apps.svelte'
+import { groupWindows, newWindow, running, windowsForPinned } from './apps/apps.svelte'
 import { settings } from '../lib/stores.svelte'
 import { invoke } from '@tauri-apps/api/core'
 import { notice } from '../lib/notice'
@@ -120,7 +120,12 @@ export const widgets: WidgetDef[] = [
       if (target) invoke('window_activate', { hwnd: target.hwnd, toggle: true })
       else ipc.launch(item.options.path, item.options.args).catch(notice)
     },
-    middle: (item) => { ipc.launch(item.options.path, item.options.middleArgs ?? item.options.args) },
+    // Middle-click: your own arguments if set, else a new window of the app.
+    middle: (item) => {
+      if (item.options.middleArgs) { ipc.launch(item.options.path, item.options.middleArgs).catch(notice); return }
+      const [t, a] = newWindow(item.options.path)
+      ipc.launch(t, a ?? item.options.args).catch(notice)
+    },
   },
   {
     id: 'launchpad', name: 'Launchpad', category: 'apps', description: 'Search and open your apps.',
@@ -186,7 +191,7 @@ export const widgets: WidgetDef[] = [
       const g = groupWindows(running.value).find((x) => x.key === key)
       if (!g) return
       const target = g.key.startsWith('aumid:') ? g.icon : g.exe
-      if (verb === 'new') ipc.launch(target)
+      if (verb === 'new') { const [t, a] = newWindow(g.exe, target); ipc.launch(t, a).catch(notice) }
       else if (verb === 'close') g.windows.forEach((w) => invoke('window_close', { hwnd: w.hwnd }))
       else if (verb === 'pin') {
         const items = settings.value?.items ?? []

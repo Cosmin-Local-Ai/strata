@@ -158,33 +158,45 @@ pub fn uptime() -> u64 {
 pub fn terminal(command: &str, shell: &str, admin: bool, cwd: Option<&str>) -> Result<(), String> {
     use base64::Engine;
     let ps_exe = if shell == "pwsh" { "pwsh.exe" } else { "powershell.exe" };
-    let inner: String = match shell {
-        "cmd" => if command.trim().is_empty() { "cmd.exe".into() } else { format!("cmd.exe /k {}", command) },
-        _ => {
-            if command.trim().is_empty() {
-                format!("{ps_exe} -NoLogo")
-            } else {
-                let utf16: Vec<u8> = command.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
-                format!("{ps_exe} -NoLogo -NoExit -EncodedCommand {}", base64::engine::general_purpose::STANDARD.encode(utf16))
-            }
-        }
-    };
     let dir = cwd.map(expand_env).filter(|d| std::path::Path::new(d).is_dir())
         .unwrap_or_else(|| std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\".into()));
+    let encode = |c: &str| {
+        let utf16: Vec<u8> = c.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+        base64::engine::general_purpose::STANDARD.encode(utf16)
+    };
+    let run = |verb: PCWSTR, file: &str, params: &str, dir: &str| -> Result<(), String> {
+        let r = unsafe { ShellExecuteW(None, verb, &HSTRING::from(file), &HSTRING::from(params), &HSTRING::from(dir), SW_SHOWNORMAL) };
+        if r.0 as isize > 32 { Ok(()) } else { Err(format!("Could not open a terminal (code {})", r.0 as isize)) }
+    };
+
+    // As administrator: elevate the shell itself. Elevating wt.exe drops the command it was given (an
+    // empty admin window), and that window then also swallowed later non-admin runs aimed at it.
+    // Windows still shows the shell in Windows Terminal when that is the default terminal app. An
+    // elevated process ignores the start folder, so the command changes to it first.
+    if admin {
+        return if shell == "cmd" {
+            let cd = format!("cd /d \"{dir}\"");
+            run(w!("runas"), "cmd.exe", &if command.trim().is_empty() { format!("/k {cd}") } else { format!("/k {cd} && {command}") }, &dir)
+        } else {
+            let cd = format!("Set-Location -LiteralPath '{}'", dir.replace('\'', "''"));
+            let full = if command.trim().is_empty() { cd } else { format!("{cd}\n{command}") };
+            run(w!("runas"), ps_exe, &format!("-NoLogo -NoExit -EncodedCommand {}", encode(&full)), &dir)
+        };
+    }
+
+    let inner: String = match shell {
+        "cmd" => if command.trim().is_empty() { "cmd.exe".into() } else { format!("cmd.exe /k {}", command) },
+        _ => if command.trim().is_empty() { format!("{ps_exe} -NoLogo") } else { format!("{ps_exe} -NoLogo -NoExit -EncodedCommand {}", encode(command)) },
+    };
     let wt = std::env::var("LOCALAPPDATA").map(|l| std::path::Path::new(&l).join(r"Microsoft\WindowsApps\wt.exe")).ok().filter(|p| p.exists());
-    // Windows Terminal treats `;` as its own command separator: escape it for cmd lines (PowerShell's
-    // are base64 and contain none).
-    let (file, params) = match wt {
-        Some(w) => (w.to_string_lossy().into_owned(), format!("-w 0 new-tab -d \"{}\" {}", dir, inner.replace(';', r"\;"))),
+    match wt {
+        // Tabs in Strata's own Terminal window ("-w strata"): "-w 0" meant whichever window was used
+        // last, and if that one runs as administrator a normal run can't reach it (the command was lost).
+        // Windows Terminal treats `;` as its own separator: escape it (PowerShell's are base64, none).
+        Some(w) => run(w!("open"), &w.to_string_lossy(), &format!("-w strata new-tab -d \"{}\" {}", if dir.ends_with('\\') { format!("{dir}.") } else { dir.clone() }, inner.replace(';', r"\;")), &dir),
         None => {
             let (exe, rest) = inner.split_once(' ').map(|(a, b)| (a.to_string(), b.to_string())).unwrap_or((inner.clone(), String::new()));
-            (exe, rest)
+            run(w!("open"), &exe, &rest, &dir)
         }
-    };
-    let f = HSTRING::from(file);
-    let p = HSTRING::from(params);
-    let d = HSTRING::from(dir);
-    let verb = if admin { w!("runas") } else { w!("open") };
-    let r = unsafe { ShellExecuteW(None, verb, &f, &p, &d, SW_SHOWNORMAL) };
-    if r.0 as isize > 32 { Ok(()) } else { Err(format!("Could not open a terminal (code {})", r.0 as isize)) }
+    }
 }
