@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { sysClock } from '../../lib/clock.svelte'
   // Calendar (next event today) · Screen Time (today's total) · Day Timeline (today as one line by app
   // type, now marker, meetings, sunrise/sunset) · WhatsApp (unread count and last sender).
   import { CalendarDays, Hourglass, MessageCircle } from '@lucide/svelte'
@@ -47,7 +48,7 @@
     const t = setInterval(load, 20_000)
     return () => clearInterval(t)
   })
-  const t2 = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const t2 = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: sysClock.h12 })
 </script>
 
 {#if id === 'calendar'}

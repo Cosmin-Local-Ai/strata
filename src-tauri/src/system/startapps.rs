@@ -60,6 +60,22 @@ pub fn apps() -> Vec<StartApp> {
     v
 }
 
+/// A program inside a Store / MSIX package (`...\WindowsApps\Claude_1.2.3.0_x64__pubid\app\claude.exe`)
+/// -> that package's Start menu entry (`shell:AppsFolder\Claude_pubid!Claude`). The versioned folder
+/// disappears when the app updates and can't be started directly anyway; the entry always works.
+pub fn packaged_target(path: &str) -> Option<String> {
+    let l = path.to_lowercase().replace('/', "\\");
+    let i = l.find("\\windowsapps\\")?;
+    let folder = l[i + "\\windowsapps\\".len()..].split('\\').next()?;
+    let (name, publisher) = (folder.split('_').next()?, folder.rsplit('_').next()?);
+    if name.is_empty() || publisher.is_empty() || name == folder { return None }
+    let prefix = format!("shell:appsfolder\\{name}_{publisher}!");
+    let file = l.rsplit('\\').next().unwrap_or("").trim_end_matches(".exe").to_string();
+    let all = apps();
+    let mine: Vec<&StartApp> = all.iter().filter(|a| a.target.to_lowercase().starts_with(&prefix)).collect();
+    mine.iter().find(|a| a.name.to_lowercase().contains(&file)).or(mine.first()).map(|a| a.target.clone())
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct FileHit { pub path: String, pub name: String, pub folder: bool, pub modified: u64 }

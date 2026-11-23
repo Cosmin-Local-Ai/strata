@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { notice } from '../../lib/notice'
   // Search: web search, or type a folder/file path to open it.
   import { Folder, Search } from '@lucide/svelte'
   import { ipc } from '../../lib/ipc'
@@ -13,7 +14,7 @@
     const t = q.trim()
     if (!t) return
     const target = isPath ? t.replace(/^~[\\/]/, '%USERPROFILE%\\') : engine + encodeURIComponent(t)
-    try { await ipc.launch(target); close() } catch (e) { alert(String(e)) }
+    try { await ipc.launch(target); close() } catch (e) { notice(e) }
   }
 </script>
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { sysClock } from '../../lib/clock.svelte'
   // Meeting Notes: a list of meetings and an editor with title, time, attendees, agenda, notes, action
   // items (with owners), a meeting timer, and export as Markdown (copy or save). Saved as you type.
   import { ArrowLeft, Check, ClipboardCopy, Download, Pause, Play, Plus, Search, Trash2, X } from '@lucide/svelte'
@@ -63,7 +64,7 @@
   }
   const localInput = (ms: number) => { const d = new Date(ms); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16) }
   const day = (ms: number) => new Date(ms).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
-  const hm = (ms: number) => new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  const hm = (ms: number) => new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: sysClock.h12 })
 </script>
 
 <div class="mc">

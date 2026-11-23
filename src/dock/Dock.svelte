@@ -20,6 +20,8 @@
   let activeUid = $state<string | null>(null)
   // Widgets picker open: tiles show a remove badge and can be dragged to reorder.
   let editing = $state(false)
+  let note = $state<string | null>(null), noteAction = $state<string | undefined>()
+  let noteTimer: ReturnType<typeof setTimeout> | undefined
   let dragUid = $state<string | null>(null)
   let order = $state<DockItem[] | null>(null)
   let body: HTMLDivElement | undefined = $state()
@@ -257,12 +259,17 @@
       listen<Layout>('dock:layout', (e) => (layout = e.payload)),
       listen<YieldState>('dock:yield', (e) => (yielding = e.payload.active)),
       listen<boolean>('picker:state', (e) => (editing = e.payload)),
+      listen<string | { text: string; action?: string }>('dock:notice', (e) => {
+        const p = typeof e.payload === 'string' ? { text: e.payload } : e.payload
+        note = p.text; noteAction = p.action
+        clearTimeout(noteTimer); noteTimer = setTimeout(() => (note = null), p.action ? 20000 : 7000)
+      }),
       listen<{ uid: string; dock: string }>('card:shown', (e) => (activeUid = e.payload.dock === label ? e.payload.uid : null)),
       listen('card:closed', () => (activeUid = null)),
       listen<{ uid: string; action: string; data: any }>('card:action', (e) => {
         const { uid, action, data } = e.payload
         if (uid === 'dock') {
-          if (action === 'menu:settings') invoke('open_settings')
+          if (action === 'menu:settings') invoke('open_settings').catch((e) => invoke('ui_error', { message: `open settings: ${e}` }))
           else if (action === 'menu:widgets') ipc.overlayOpen('widgets')
           else if (action === 'menu:quit') invoke('quit')
           return
@@ -303,6 +310,7 @@
         </div>
       {/each}
       </div>
+      {#if note}<button class="note" class:act={noteAction} title={noteAction ? '' : 'Dismiss'} onclick={() => { if (noteAction === 'update') invoke('open_update'); note = null }}>{note}</button>{/if}
     </div>
   </main>
 {/if}
@@ -350,6 +358,11 @@
   .slot.editing:nth-child(even) { animation-delay: -0.14s; }
   .slot.dragging { opacity: 0.4; }
   @keyframes wiggle { from { transform: rotate(-1.2deg); } to { transform: rotate(1.2deg); } }
+  .body { position: relative; }
+  .note { position: absolute; inset: 3px; z-index: 70; border-radius: inherit; background: rgba(22, 22, 26, 0.95); color: #fff; font-size: 12.5px; line-height: 1.3;
+          display: flex; align-items: center; justify-content: center; padding: 0 18px; text-align: center; overflow: hidden; animation: note-in 160ms var(--ease-out); }
+  .note.act { background: var(--accent); }
+  @keyframes note-in { from { opacity: 0; } }
   .remove { position: absolute; top: -5px; left: -5px; z-index: 60; width: 18px; height: 18px; border-radius: 9px; background: #ff3b30; color: white;
             display: grid; place-items: center; padding: 0; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
 </style>

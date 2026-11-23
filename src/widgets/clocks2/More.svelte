@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { sysClock } from '../../lib/clock.svelte'
   // World Time (digital times for your cities) · Today (weekday, date, day progress) · Segment Clock
   // (seven-segment digits) · Clock & Weather (time with the current temperature).
   import { clock } from '../../lib/stores.svelte'
@@ -8,7 +9,7 @@
   const id = $derived(item.widget)
   const c = clock(id === 'segment-clock' && item.options.seconds ? 1000 : 60_000)
   const n = $derived(c.now)
-  const h12 = $derived(item.options.hour12 === true)
+  const h12 = $derived(item.options.hour12 ?? sysClock.h12)
   const hh = $derived(String(h12 ? ((n.getHours() + 11) % 12) + 1 : n.getHours()).padStart(2, '0'))
   const mm = $derived(String(n.getMinutes()).padStart(2, '0'))
   const zones: { label: string; tz: string }[] = $derived(item.options.zones ?? [

@@ -5,6 +5,7 @@
   import { AppWindow, Gamepad2, Info, Monitor, Palette, PanelBottom, PanelBottomClose as Taskbar, Sparkles } from '@lucide/svelte'
   import { settings, startStores } from '../lib/stores.svelte'
   import { notesFor, renderNotes } from '../lib/changelog'
+  import { ipc } from '../lib/ipc'
   import Row from './Row.svelte'
 
   startStores()
@@ -47,10 +48,11 @@
   let version = $state('')
   import('@tauri-apps/api/app').then((m) => m.getVersion()).then((v) => (version = v))
   // Updates: show what changed first, install on request.
-  let updateMsg = $state(''), updating = $state(false)
+  let updateMsg = $state(''), updating = $state(false), updateErr = $state('')
+  const RELEASES = 'https://github.com/Cosmin-Local-Ai/strata/releases/latest'
   let pending = $state<{ version: string; notes: string; install: () => Promise<void> } | null>(null)
   async function checkUpdate() {
-    updating = true; updateMsg = 'Checking…'
+    updating = true; updateMsg = 'Checking…'; updateErr = ''
     try {
       const { check } = await import('@tauri-apps/plugin-updater')
       const u = await check()
@@ -62,10 +64,13 @@
           await u.downloadAndInstall()
           const { relaunch } = await import('@tauri-apps/plugin-process')
           await relaunch()
-        } catch (e) { updateMsg = `Couldn't install: ${String(e).slice(0, 80)}` } finally { updating = false }
+        } catch (e) { updateMsg = ''; updateErr = `Couldn't install: ${String(e).slice(0, 160)}` } finally { updating = false }
       } }
-    } catch (e) { updateMsg = `Couldn't check: ${String(e).slice(0, 80)}` } finally { updating = false }
+    } catch (e) { updateMsg = ''; updateErr = `Couldn't check for updates: ${String(e).slice(0, 160)}` } finally { updating = false }
   }
+  // A background check found an update (or its dock message was clicked): show it here.
+  import('@tauri-apps/api/event').then(({ listen }) => listen('settings:update', () => { section = 'about'; if (!pending) checkUpdate() }))
+  invoke<string | null>('update_pending').then((v) => { if (v) { section = 'about'; checkUpdate() } }).catch(() => {})
   const currentNotes = $derived(version ? notesFor(version) : '')
   async function set(patch: Record<string, unknown>) {
     error = ''
@@ -240,6 +245,19 @@
           <Row label="Updates" tip="Checks the Strata releases on GitHub. Updates are signed; Strata verifies them before installing.">
             <button class="btn" onclick={checkUpdate} disabled={updating}>{updateMsg || 'Check for updates'}</button>
           </Row>
+          <Row label="Update automatically" tip="Strata checks GitHub when it starts and every 6 hours. Tell me: a message on the dock, you install from here. Install: downloads, installs and restarts Strata by itself.">
+            <div class="seg">
+              {#each [['notify', 'Tell me'], ['auto', 'Install'], ['off', 'Off']] as [id, label]}<button class:on={(s?.updateMode ?? 'notify') === id} onclick={() => set({ updateMode: id })}>{label}</button>{/each}
+            </div>
+          </Row>
+          {#if updateErr}
+            <div class="notes">
+              <div class="nh"><strong>{updateErr}</strong></div>
+              <div class="md"><p>Download the installer from GitHub and run it instead: your settings and widgets are kept. If Windows shows
+                "Windows protected your PC", choose More info → Run anyway (Strata isn't code-signed; the download itself is the official release).</p></div>
+              <div class="nh"><span class="sp"></span><button class="btn primary" onclick={() => ipc.launch(RELEASES)}>Open the download page</button></div>
+            </div>
+          {/if}
           {#if pending}
             <div class="notes">
               <div class="nh"><strong>Strata {pending.version} is available</strong><span class="sp"></span>

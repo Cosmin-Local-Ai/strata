@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { notice } from '../../lib/notice'
   // Launchpad: your apps in named sections, with search and right-click
   // actions: Open, Run as administrator, Open file location, Edit, Move to section, Remove from
   // section, Delete; Add new app, New section; sort A–Z / Z–A / Recent / Oldest.
@@ -35,7 +36,7 @@
   const save = (patch: Partial<Data>) => data.save({ ...data.value, ...patch })
   const icon = (a: App) => (a.icon && /\.(png|jpe?g|ico|bmp|webp)$/i.test(a.icon) ? `http://thumb.localhost/${encodeURIComponent(a.icon)}?w=96` : iconUrl(a.path, 96))
   async function open(a: App, admin = false) {
-    try { admin ? await invoke('launch_admin', { target: a.path }) : await ipc.launch(a.path) } catch (e) { alert(String(e)) }
+    try { admin ? await invoke('launch_admin', { target: a.path }) : await ipc.launch(a.path) } catch (e) { notice(e) }
     close()
   }
   function key(e: KeyboardEvent) {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { sysClock } from '../../lib/clock.svelte'
   // Clock card (all clock styles): the time with seconds, today's date, week and day of the year,
   // this week, display options for this tile, and your world clocks (add/remove/rename zones).
   import { Plus, X } from '@lucide/svelte'
@@ -9,7 +10,7 @@
   const c = clock(1000)
   const n = $derived(c.now)
 
-  let hour12 = $state<boolean>(item.options.hour12 === true)
+  let hour12 = $state<boolean>(item.options.hour12 ?? sysClock.h12)
   let seconds = $state<boolean>(item.options.seconds === true)
   type Zone = { label: string; tz: string }
   let zones = $state<Zone[]>(item.options.zones ?? [

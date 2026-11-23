@@ -84,7 +84,7 @@ impl Inner {
             }
             eq.rect = Some(rect);
         }
-        log::info!("equaliser placed at {:?} (bar {}x{} px)", rect, bw_i, bh_i);
+        log::debug!("equaliser placed at {:?} (bar {}x{} px)", rect, bw_i, bh_i);
         Ok(())
     }
 
@@ -139,7 +139,7 @@ impl Glass {
             static N: AtomicU32 = AtomicU32::new(0);
             let n = N.fetch_add(1, Ordering::Relaxed);
             if n % 200 == 0 {
-                log::info!("equaliser levels {:?} shown={} (update #{n})", levels, eq.shown);
+                log::debug!("equaliser levels {:?} shown={} (update #{n})", levels, eq.shown);
             }
         }
         unsafe {

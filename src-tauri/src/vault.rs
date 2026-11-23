@@ -184,14 +184,16 @@ fn check_master(c: &LockConfig, pw: Option<&str>) -> Result<(), String> {
     if diff == 0 { Ok(()) } else { std::thread::sleep(std::time::Duration::from_millis(600)); Err("Wrong master password".into()) }
 }
 
-fn hello(hwnd: isize) -> Result<&'static str, String> {
+fn hello(hwnd: isize) -> Result<&'static str, String> { hello_with(hwnd, "Unlock your Strata vault") }
+
+fn hello_with(hwnd: isize, message: &str) -> Result<&'static str, String> {
     use windows::Security::Credentials::UI::*;
     let avail = UserConsentVerifier::CheckAvailabilityAsync().and_then(|a| a.join()).map_err(|e| e.to_string())?;
     if avail != UserConsentVerifierAvailability::Available { return Ok("no-hello") }
     let interop: windows::Win32::System::WinRT::IUserConsentVerifierInterop =
         windows::core::factory::<UserConsentVerifier, _>().map_err(|e| e.to_string())?;
     let op: windows_future::IAsyncOperation<UserConsentVerificationResult> = unsafe {
-        interop.RequestVerificationForWindowAsync(windows::Win32::Foundation::HWND(hwnd as _), &HSTRING::from("Unlock your Strata vault"))
+        interop.RequestVerificationForWindowAsync(windows::Win32::Foundation::HWND(hwnd as _), &HSTRING::from(message))
     }.map_err(|e| e.to_string())?;
     let r = op.join().map_err(|e| e.to_string())?;
     if r != UserConsentVerificationResult::Verified { return Err("Not verified".into()) }
@@ -210,6 +212,21 @@ pub fn unlock(hwnd: isize, minutes: u64, password: Option<String>) -> Result<Str
     };
     *UNLOCKED_UNTIL.lock().unwrap() = Some(std::time::Instant::now() + std::time::Duration::from_secs(minutes.clamp(1, 120) * 60));
     Ok(mode.into())
+}
+
+/// Forgot the master password. The items are encrypted with your Windows account (DPAPI); the master
+/// password is an extra lock on top. Proving you are that Windows user again (Windows Hello: face,
+/// fingerprint or PIN) removes it and opens the vault, so a new one can be set. Nothing is lost.
+/// Without Hello there is no second way to prove it: "no-hello".
+pub fn reset_master(hwnd: isize, minutes: u64) -> Result<(), String> {
+    if lock_config().hash.is_empty() { return Ok(()) }
+    if hello_with(hwnd, "Confirm it's you to reset the Strata vault's master password")? == "no-hello" {
+        return Err("no-hello".into());
+    }
+    std::fs::write(lock_path(), serde_json::to_vec_pretty(&LockConfig::default()).unwrap()).map_err(|e| e.to_string())?;
+    *UNLOCKED_UNTIL.lock().unwrap() = Some(std::time::Instant::now() + std::time::Duration::from_secs(minutes.clamp(1, 120) * 60));
+    log::warn!("vault master password reset after Windows Hello verification");
+    Ok(())
 }
 
 /// Set or change the master password (Some), or turn it off (None). Only while unlocked.

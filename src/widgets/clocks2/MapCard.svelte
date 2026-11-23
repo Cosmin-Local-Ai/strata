@@ -1,10 +1,11 @@
 <script lang="ts">
+  import { sysClock } from '../../lib/clock.svelte'
   // World Map card: the big map with live day/night and city times; click cities below to show/hide them.
   import type { CardProps } from '../types'
   import WorldMap, { CITIES, DEFAULT_CITIES } from './WorldMap.svelte'
   let { item, act }: CardProps = $props()
   let cities = $state<string[]>(item.options.cities ?? DEFAULT_CITIES)
-  let hour12 = $state<boolean>(item.options.hour12 === true)
+  let hour12 = $state<boolean>(item.options.hour12 ?? sysClock.h12)
   function toggle(n: string) {
     cities = cities.includes(n) ? cities.filter((c) => c !== n) : [...cities, n]
     act('set-options', { cities: $state.snapshot(cities), hour12 })

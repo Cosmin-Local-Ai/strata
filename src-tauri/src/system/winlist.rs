@@ -148,7 +148,18 @@ unsafe extern "system" fn each(h: HWND, lp: LPARAM) -> BOOL {
         // exe and AUMID never change for a window: cache them (they are the expensive part).
         let (exe, aumid) = {
             let mut c = ident_cache().lock().unwrap();
-            c.entry(h.0 as i64).or_insert_with(|| (crate::shell::gamemode::process_path(pid), aumid_of(h))).clone()
+            c.entry(h.0 as i64).or_insert_with(|| {
+                let exe = crate::shell::gamemode::process_path(pid);
+                let mut aumid = aumid_of(h);
+                // Store apps that set their own window ID (Electron apps like Claude): use the package's
+                // Start entry, so the group, its icon and a pin don't point into a versioned folder.
+                if !aumid.contains('!') && exe.to_lowercase().contains("\\windowsapps\\") {
+                    if let Some(t) = super::startapps::packaged_target(&exe) {
+                        aumid = t.trim_start_matches("shell:AppsFolder\\").to_string();
+                    }
+                }
+                (exe, aumid)
+            }).clone()
         };
         out.push(AppWindow {
             hwnd: h.0 as i64,

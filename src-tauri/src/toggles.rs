@@ -236,14 +236,51 @@ pub fn gamma_reset() {
 
 // ---------------------------------------------------------------- start with Windows
 const RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
-/// Registers (or removes) Strata in the user's Run key, which is what Task Manager → Startup apps lists.
+/// Where Task Manager → Startup apps and Settings → Apps → Startup keep their on/off switch: 12 bytes,
+/// the first byte even = enabled (02), odd = disabled (03), then the time it was switched off.
+const APPROVED: &str = r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
+
+fn approved_enabled() -> bool {
+    let mut buf = [0u8; 12];
+    let mut len = buf.len() as u32;
+    let r = unsafe {
+        RegGetValueW(HKEY_CURRENT_USER, &HSTRING::from(APPROVED), w!("Strata"), RRF_RT_REG_BINARY, None, Some(buf.as_mut_ptr() as _), Some(&mut len))
+    };
+    r.is_err() || buf[0] & 1 == 0 // no switch stored yet = enabled
+}
+
+fn set_approved(on: bool) -> Result<(), String> {
+    let mut v = [0u8; 12];
+    v[0] = if on { 2 } else { 3 };
+    if !on {
+        let ft = unsafe { windows::Win32::System::SystemInformation::GetSystemTimeAsFileTime() };
+        v[4..8].copy_from_slice(&ft.dwLowDateTime.to_le_bytes());
+        v[8..12].copy_from_slice(&ft.dwHighDateTime.to_le_bytes());
+    }
+    unsafe { RegSetKeyValueW(HKEY_CURRENT_USER, &HSTRING::from(APPROVED), w!("Strata"), REG_BINARY.0, Some(v.as_ptr() as _), 12).ok().map_err(|e| e.to_string()) }
+}
+
+fn write_run_entry() -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    set_reg_sz(RUN, "Strata", &format!("\"{}\"", exe.display()))
+}
+
+/// Start with Windows on or off. Strata always stays listed in Startup apps (like other programs) and
+/// flips the same switch as Task Manager, so either place can turn it on or off.
 pub fn set_autostart(on: bool) -> Result<(), String> {
-    if on {
-        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-        set_reg_sz(RUN, "Strata", &format!("\"{}\"", exe.display()))
-    } else {
-        unsafe { let _ = RegDeleteKeyValueW(HKEY_CURRENT_USER, &HSTRING::from(RUN), w!("Strata")); }
-        Ok(())
+    write_run_entry()?;
+    set_approved(on)
+}
+pub fn autostart() -> bool { crate::util::reg_string(HKEY_CURRENT_USER, RUN, "Strata").is_some() && approved_enabled() }
+
+/// At every start: keep the Startup apps entry present and pointing at this exe. `first_run` turns it on;
+/// otherwise the current switch is kept (an entry missing because an older Strata deleted it = off).
+pub fn ensure_autostart_entry(first_run: bool) {
+    let listed = crate::util::reg_string(HKEY_CURRENT_USER, RUN, "Strata").is_some();
+    let _ = write_run_entry();
+    if first_run {
+        let _ = set_approved(true);
+    } else if !listed {
+        let _ = set_approved(false);
     }
 }
-pub fn autostart() -> bool { crate::util::reg_string(HKEY_CURRENT_USER, RUN, "Strata").is_some() }

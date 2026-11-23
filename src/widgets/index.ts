@@ -85,6 +85,7 @@ import AppsCard from './apps/Card.svelte'
 import { groupWindows, running, windowsForPinned } from './apps/apps.svelte'
 import { settings } from '../lib/stores.svelte'
 import { invoke } from '@tauri-apps/api/core'
+import { notice } from '../lib/notice'
 import { media } from '../lib/stores.svelte'
 import { audio } from '../lib/stores.svelte'
 
@@ -117,7 +118,7 @@ export const widgets: WidgetDef[] = [
       const wins = windowsForPinned(item.options.path ?? '', running.value)
       const target = wins.find((w) => w.foreground) ?? wins[0]
       if (target) invoke('window_activate', { hwnd: target.hwnd, toggle: true })
-      else ipc.launch(item.options.path, item.options.args).catch((e) => alert(e))
+      else ipc.launch(item.options.path, item.options.args).catch(notice)
     },
     middle: (item) => { ipc.launch(item.options.path, item.options.middleArgs ?? item.options.args) },
   },
@@ -184,12 +185,13 @@ export const widgets: WidgetDef[] = [
       const [verb, key] = action.split('|')
       const g = groupWindows(running.value).find((x) => x.key === key)
       if (!g) return
-      if (verb === 'new') ipc.launch(g.exe)
+      const target = g.key.startsWith('aumid:') ? g.icon : g.exe
+      if (verb === 'new') ipc.launch(target)
       else if (verb === 'close') g.windows.forEach((w) => invoke('window_close', { hwnd: w.hwnd }))
       else if (verb === 'pin') {
         const items = settings.value?.items ?? []
         const at = items.findIndex((i) => i.uid === item.uid)
-        const pin = { uid: 'pin' + Date.now(), widget: 'app', options: { path: g.exe, name: g.name } }
+        const pin = { uid: 'pin' + Date.now(), widget: 'app', options: { path: target, name: g.name } }
         ipc.setItems([...items.slice(0, at), pin, ...items.slice(at)])
       }
     },

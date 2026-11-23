@@ -103,6 +103,21 @@ unsafe extern "system" fn each_tray(h: HWND, lp: LPARAM) -> windows::core::BOOL 
     true.into()
 }
 
+/// Is the primary or any secondary taskbar showing?
+pub fn any_visible() -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{FindWindowExW, IsWindowVisible};
+    unsafe {
+        if tray_visible() { return true }
+        let mut after: Option<HWND> = None;
+        while let Ok(h) = FindWindowExW(None, after, w!("Shell_SecondaryTrayWnd"), None) {
+            if h.0.is_null() { break }
+            if IsWindowVisible(h).as_bool() { return true }
+            after = Some(h);
+        }
+        false
+    }
+}
+
 pub fn tray_visible() -> bool {
     tray().map(|h| unsafe { windows::Win32::UI::WindowsAndMessaging::IsWindowVisible(h).as_bool() }).unwrap_or(true)
 }

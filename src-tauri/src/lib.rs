@@ -5,6 +5,7 @@ mod local;
 mod mail;
 mod services;
 mod toggles;
+mod updates;
 mod vault;
 mod dialog;
 mod projects;
@@ -157,7 +158,8 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| cli_command(app, &argv)))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).level_for("strata_lib::system::audio", log::LevelFilter::Debug).build())
+        // 1 MB per file, the last 3 kept: a log sent with a problem report still reaches back to startup.
+        .plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).max_file_size(1_000_000).rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(3)).build())
         .register_asynchronous_uri_scheme_protocol("icon", |_ctx, request, responder| commands::icon_protocol(request, responder))
         .register_asynchronous_uri_scheme_protocol("thumb", |_ctx, request, responder| commands::thumb_protocol(request, responder))
         .invoke_handler(tauri::generate_handler![
@@ -169,7 +171,7 @@ pub fn run() {
             commands::media_state, commands::media_control, commands::media_seek, commands::audio_state,
             commands::audio_set_volume, commands::audio_set_mute, commands::wifi_state, commands::net_info, commands::wifi_networks, commands::wifi_connect, commands::eq_rect, commands::windows_list, commands::window_activate, commands::window_close, commands::gallery_state, commands::gallery_pictures, commands::gallery_apply, commands::previews_set, commands::card_close_if, commands::preview_hover, commands::settings_reset, commands::secret_has, commands::secret_set, commands::secret_delete, commands::download_wallpaper, commands::http_get, commands::wallpaper_change_now, commands::tray_icons, commands::tray_click, commands::card_sticky, commands::we_control, commands::we_playlist, commands::audio_set_default, commands::audio_sessions, commands::audio_session_set,
             commands::sys_stats, commands::recycle_bin, commands::recycle_bin_empty, commands::theme_is_light, commands::theme_set_light,
-            commands::mic_muted, commands::mic_set_muted, commands::sys_action, commands::kb_layouts, commands::kb_set_layout, commands::battery, commands::launch_admin, commands::reveal, commands::audio_devices, commands::audio_device_set, commands::everything_search, commands::everything_running, commands::api, commands::google_connect, commands::google_status, commands::google_disconnect, commands::yahoo_login, commands::yahoo_mail, commands::yahoo_disconnect, commands::opencode_usage, commands::screen_time, commands::whatsapp, commands::folder_list, commands::folder_path, commands::toggles_get, commands::toggle_set, commands::brightness_get, commands::brightness_set, commands::capture_screen, commands::capture_window, commands::capture_region_begin, commands::capture_region_finish, commands::capture_region_cancel, commands::clipboard_text, commands::capture_temp_path, commands::calendars_list, commands::calendars_add, commands::calendars_remove, commands::calendars_fetch, commands::flow_toggle, commands::gamma_set, commands::gamma_reset, commands::autostart_get, commands::autostart_set, commands::capture_save_set, commands::vault_list, commands::vault_state, commands::vault_unlock, commands::vault_lock, commands::vault_save, commands::vault_delete, commands::vault_reveal, commands::vault_copy, commands::vault_generate, commands::default_player, commands::vault_lock_info, commands::vault_set_master, commands::vault_import, commands::vault_export, commands::vault_health, commands::vault_attach, commands::vault_file_save, commands::vault_file_remove, commands::vault_passphrase, commands::pick_file, commands::office_apps, commands::project_action, commands::project_detect, commands::project_clone, commands::pick_folder, commands::terminal_run, commands::terminal_info, commands::start_apps, commands::google_client_saved, commands::quick_files, commands::save_text_as, commands::ui_error
+            commands::mic_muted, commands::mic_set_muted, commands::sys_action, commands::kb_layouts, commands::kb_set_layout, commands::battery, commands::launch_admin, commands::reveal, commands::audio_devices, commands::audio_device_set, commands::everything_search, commands::everything_running, commands::api, commands::google_connect, commands::google_status, commands::google_disconnect, commands::yahoo_login, commands::yahoo_mail, commands::yahoo_disconnect, commands::opencode_usage, commands::screen_time, commands::whatsapp, commands::folder_list, commands::clock_12h, commands::update_pending, commands::open_update, commands::folder_path, commands::toggles_get, commands::toggle_set, commands::brightness_get, commands::brightness_set, commands::capture_screen, commands::capture_window, commands::capture_region_begin, commands::capture_region_finish, commands::capture_region_cancel, commands::clipboard_text, commands::capture_temp_path, commands::calendars_list, commands::calendars_add, commands::calendars_remove, commands::calendars_fetch, commands::flow_toggle, commands::gamma_set, commands::gamma_reset, commands::autostart_get, commands::autostart_set, commands::capture_save_set, commands::vault_list, commands::vault_state, commands::vault_unlock, commands::vault_lock, commands::vault_save, commands::vault_delete, commands::vault_reveal, commands::vault_copy, commands::vault_generate, commands::default_player, commands::vault_lock_info, commands::vault_reset_master, commands::vault_set_master, commands::vault_import, commands::vault_export, commands::vault_health, commands::vault_attach, commands::vault_file_save, commands::vault_file_remove, commands::vault_passphrase, commands::pick_file, commands::office_apps, commands::project_action, commands::project_detect, commands::project_clone, commands::pick_folder, commands::terminal_run, commands::terminal_info, commands::start_apps, commands::google_client_saved, commands::quick_files, commands::save_text_as, commands::ui_error
         ])
         .on_window_event(|window, event| {
             // Close popups on focus loss, but only once they really had focus: when Windows refuses
@@ -286,15 +288,13 @@ pub fn run() {
             system::winlist::start(move |list| { let _ = h.emit("windows:list", list); });
 
             local::start_screen_time();
+            updates::start(app.handle().clone());
             // First run: start with Windows by default (listed in Task Manager → Startup apps; switch in Settings).
             {
                 let marker = config::data_dir().join(".autostart-initialised");
-                if !marker.exists() {
-                    let _ = toggles::set_autostart(true);
-                    let _ = std::fs::write(&marker, b"1");
-                } else if toggles::autostart() {
-                    let _ = toggles::set_autostart(true); // keep the path current if Strata moved
-                }
+                let first = !marker.exists();
+                toggles::ensure_autostart_entry(first);
+                if first { let _ = std::fs::write(&marker, b"1"); }
             }
             gamemode::install_foreground_hook();
             let h = app.handle().clone();

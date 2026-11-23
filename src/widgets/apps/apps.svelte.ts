@@ -26,6 +26,9 @@ export function matchName(path: string) {
 }
 /** Running windows belonging to a pinned path. */
 export function windowsForPinned(path: string, list: AppWindow[]) {
+  // Store apps pinned by their Start entry: match the window's app ID.
+  const id = /^shell:appsfolder[\\/](.+)$/i.exec(path)?.[1]?.toLowerCase()
+  if (id) return list.filter((w) => w.aumid.toLowerCase() === id)
   const n = matchName(path)
   if (!n) return []
   return list.filter((w) => {

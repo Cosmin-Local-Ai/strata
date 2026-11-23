@@ -273,6 +273,7 @@ pub const SETTINGS_LABEL: &str = "settings";
 /// Open (or focus) the Settings window. async: window creation off the main thread.
 #[tauri::command]
 pub async fn open_settings(app: AppHandle) -> R<()> {
+    log::info!("open settings");
     app.state::<AppState>().cards.hide(&app);
     if let Some(w) = app.get_webview_window(SETTINGS_LABEL) {
         let _ = w.show();
@@ -286,8 +287,20 @@ pub async fn open_settings(app: AppHandle) -> R<()> {
         .min_inner_size(700.0, 460.0)
         .center()
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| { log::error!("settings window: {e}"); e.to_string() })?;
     let _ = w.set_focus();
+    Ok(())
+}
+
+/// Version a background check found (Settings shows its notes and Install button).
+#[tauri::command]
+pub fn update_pending() -> Option<String> { crate::updates::pending() }
+
+/// The dock's "update available" message was clicked: Settings, on the update.
+#[tauri::command]
+pub async fn open_update(app: AppHandle) -> R<()> {
+    open_settings(app.clone()).await?;
+    let _ = app.emit_to(SETTINGS_LABEL, "settings:update", ());
     Ok(())
 }
 
@@ -705,6 +718,15 @@ pub async fn screen_time(days: Vec<String>) -> std::collections::HashMap<String,
 pub async fn whatsapp() -> R<crate::local::WhatsApp> { crate::local::whatsapp() }
 #[tauri::command]
 pub async fn folder_list(which: String, limit: Option<usize>) -> R<Vec<crate::local::Entry>> { crate::local::list_folder(&which, limit.unwrap_or(30)) }
+/// Windows' clock setting (Settings > Time & language > Region > time format): true = 12-hour.
+#[tauri::command]
+pub fn clock_12h() -> bool {
+    use windows::Win32::Globalization::{GetLocaleInfoEx, LOCALE_SSHORTTIME};
+    let mut buf = [0u16; 80];
+    let n = unsafe { GetLocaleInfoEx(windows::core::PCWSTR::null(), LOCALE_SSHORTTIME, Some(&mut buf)) };
+    let f = String::from_utf16_lossy(&buf[..(n.max(0) as usize).saturating_sub(1)]);
+    f.contains('h') && !f.contains('H')
+}
 #[tauri::command]
 pub fn folder_path(which: String) -> R<String> { crate::local::folder_path(&which) }
 
@@ -791,6 +813,11 @@ pub fn vault_state() -> bool { crate::vault::is_unlocked() }
 pub async fn vault_unlock(window: WebviewWindow, minutes: Option<u64>, password: Option<String>) -> R<String> {
     let h = window.hwnd().map_err(|e| e.to_string())?.0 as isize;
     crate::vault::unlock(h, minutes.unwrap_or(5), password)
+}
+#[tauri::command]
+pub async fn vault_reset_master(window: WebviewWindow, minutes: Option<u64>) -> R<()> {
+    let h = window.hwnd().map_err(|e| e.to_string())?.0 as isize;
+    crate::vault::reset_master(h, minutes.unwrap_or(5))
 }
 #[tauri::command]
 pub fn vault_lock_info() -> crate::vault::LockInfo { crate::vault::lock_info() }

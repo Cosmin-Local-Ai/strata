@@ -144,6 +144,8 @@ pub struct Settings {
     pub power_backdrop: String,
     /// The mouse wheel slides an overflowing dock (Ctrl+wheel goes to the widget).
     pub wheel_scrolls_dock: bool,
+    /// Background update checks: "notify" (message on the dock), "auto" (install and restart) or "off".
+    pub update_mode: String,
 }
 
 impl Default for Settings {
@@ -175,6 +177,7 @@ impl Default for Settings {
             wallpaper_schedule: WallpaperSchedule::default(),
             power_backdrop: "blur".into(),
             wheel_scrolls_dock: false,
+            update_mode: "notify".into(),
         }
     }
 }

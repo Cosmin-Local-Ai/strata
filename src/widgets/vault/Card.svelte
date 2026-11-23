@@ -46,6 +46,20 @@
     }
   }
   refresh().then(() => { if (!unlocked && !lockInfo.master) unlock() })
+  let forgot = $state(false)
+  async function resetMaster() {
+    lockMsg = ''
+    try {
+      await invoke('vault_reset_master', { minutes: item.options.minutes ?? 5 })
+      await refresh()
+      forgot = false; view = 'tools'
+      say('Master password removed. Set a new one below, or keep using Windows Hello.')
+    } catch (e) {
+      const s = String(e)
+      lockMsg = s.includes('no-hello') ? "Windows Hello isn't set up on this PC, so there is no other way to prove it's you. Set up a PIN in Settings → Accounts → Sign-in options, then try again."
+        : s.includes('Not verified') ? 'Not verified. Try again.' : s
+    }
+  }
 
   const shown = $derived(entries
     .filter((e) => tab === 'all' || e.kind === tab)
@@ -184,6 +198,13 @@
         <button class="primary" onclick={unlock}><ShieldCheck size={15} /> Unlock with Windows Hello</button>
       {/if}
       {#if lockMsg}<p class="err">{lockMsg}</p>{/if}
+      {#if lockInfo.master}
+        {#if !forgot}<button class="link" onclick={() => (forgot = true)}>Forgot master password?</button>
+        {:else}
+          <p class="forgot">Your items are encrypted with your Windows account, so they are safe without it: confirm it's you with Windows Hello (face, fingerprint or PIN) and the master password is removed. You can set a new one right after.</p>
+          <div class="fa"><button onclick={() => (forgot = false)}>Cancel</button><button class="primary" onclick={resetMaster}><ShieldCheck size={15} /> Reset with Windows Hello</button></div>
+        {/if}
+      {/if}
     </div>
   {:else if view === 'edit' && edit}
     {@const k = kindOf(edit.kind)}
@@ -338,6 +359,11 @@
   .mp input { width: 80%; }
   .primary { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 14px; border-radius: 10px; background: var(--accent); color: white; font-size: 13px; }
   .primary:disabled { opacity: 0.5; }
+  .locked .link { font-size: 12px; color: var(--fg-3); padding: 2px 6px; border-radius: 6px; }
+  .locked .link:hover { color: var(--fg); background: var(--surface-hover); }
+  .locked .fa { display: flex; gap: 8px; }
+  .locked .fa > button:not(.primary) { padding: 8px 14px; border-radius: 10px; background: var(--surface-press); font-size: 13px; }
+  .locked .fa > button:not(.primary):hover { background: var(--surface-hover); }
   .hd { display: flex; align-items: center; gap: 8px; }
   .hd strong { font-size: 13.5px; }
   .top { display: flex; gap: 6px; }

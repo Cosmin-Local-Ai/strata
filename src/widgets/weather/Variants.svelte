@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { sysClock } from '../../lib/clock.svelte'
   // Weather Details · Today & Forecast (three days) · Weather Status (in words) · Hourly (six hours) ·
   // Sunrise & Sunset. All share the Weather data and open the Weather card (next hours, week ahead).
   import { Droplets, Sunrise, Sunset, Wind } from '@lucide/svelte'
@@ -11,8 +12,8 @@
   $effect(() => watchWeather(item.options.place ?? DEFAULT_PLACE, (v, e) => { w = v; err = e }))
   const id = $derived(item.widget)
   const d = $derived(w ? describe(w.current.code, w.current.day) : null)
-  const hm = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  const hh = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit' })
+  const hm = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: sysClock.h12 })
+  const hh = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', hour12: sysClock.h12 })
   const dayName = (iso: string) => new Date(iso + 'T12:00').toLocaleDateString(undefined, { weekday: 'short' })
   // Sun position along today's arc (0..1), for Sunrise & Sunset.
   // Weather Card: sky colour follows the conditions and day/night.

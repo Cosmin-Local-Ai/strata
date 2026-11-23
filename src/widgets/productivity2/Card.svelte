@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { sysClock } from '../../lib/clock.svelte'
   // Calendar (month grid: two dots per day then +N; day agenda; manage iCal links) · Screen Time (hour
   // by hour; per-app for today and the week) · Day Timeline (today by app type, meetings,
   // sunrise/sunset) · WhatsApp (recent notifications; open WhatsApp).
@@ -56,7 +57,7 @@
     await ipc.dataWrite('calendar-events', { events: cur.filter((x) => x.id !== e.id) })
     await reload()
   }
-  const tm = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const tm = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: sysClock.h12 })
 
   // ---------------- screen time / timeline
   let days = $state<Record<string, Day>>({})

@@ -1,3 +1,4 @@
+import { sysClock } from '../../lib/clock.svelte'
 // Meeting notes: one record per meeting, kept in %APPDATA%\Strata\meetings.json.
 export type Action = { id: string; text: string; owner: string; done: boolean }
 export type Meeting = {
@@ -23,7 +24,7 @@ export const mmss = (ms: number) => { const s = Math.floor(ms / 1000); const h =
 
 export function toMarkdown(m: Meeting): string {
   const d = new Date(m.when)
-  const lines = [`# ${m.title || 'Meeting'}`, '', `**When:** ${d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, ${d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}${m.elapsed || m.timerStart ? ` (${mmss(elapsedOf(m))})` : ''}`]
+  const lines = [`# ${m.title || 'Meeting'}`, '', `**When:** ${d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, ${d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: sysClock.h12 })}${m.elapsed || m.timerStart ? ` (${mmss(elapsedOf(m))})` : ''}`]
   if (m.attendees.trim()) lines.push(`**Attendees:** ${m.attendees.trim()}`)
   if (m.agenda.trim()) lines.push('', '## Agenda', '', ...m.agenda.trim().split('\n').map((l) => (/^\s*[-*]/.test(l) ? l : `- ${l}`)))
   if (m.notes.trim()) lines.push('', '## Notes', '', m.notes.trim())

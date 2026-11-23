@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { sysClock } from '../../lib/clock.svelte'
   // Next hours and the week ahead.
   // Fixed width and a placeholder of the same height while loading, so nothing jumps or overflows.
   import { MapPin, Sunrise, Sunset } from '@lucide/svelte'
@@ -13,8 +14,8 @@
   let q = $state('')
   let results = $state<Place[]>([])
   const now = $derived(w ? describe(w.current.code, w.current.day) : null)
-  const hm = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  const hh = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit' })
+  const hm = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: sysClock.h12 })
+  const hh = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', hour12: sysClock.h12 })
   const dayName = (d: string, i: number) => (i === 0 ? 'Today' : new Date(d).toLocaleDateString([], { weekday: 'short' }))
   // Range bar for the week: position of each day's min/max within the week's overall range.
   const lo = $derived(w ? Math.min(...w.daily.map((d) => d.min)) : 0)

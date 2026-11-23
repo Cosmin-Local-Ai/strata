@@ -4,7 +4,7 @@
 use serde::Serialize;
 use windows::core::{w, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{LPARAM, WPARAM};
-use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
+use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_MULTITHREADED};
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::Shell::{SHEmptyRecycleBinW, SHQueryRecycleBinW, SHERB_NOCONFIRMATION, SHERB_NOPROGRESSUI, SHERB_NOSOUND, SHQUERYRBINFO};
 use windows::Win32::UI::WindowsAndMessaging::*;
@@ -54,24 +54,50 @@ pub fn set_light(light: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn mic() -> Option<windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume> {
+/// Every active microphone with its device id. Apps record from the device *they* picked (Discord,
+/// Teams, games), not necessarily the Windows default, so mute acts on all of them.
+fn mics() -> Vec<(String, windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume)> {
     use windows::Win32::Media::Audio::*;
+    let mut out = vec![];
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-        let en: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
-        let dev = en.GetDefaultAudioEndpoint(eCapture, eCommunications).or_else(|_| en.GetDefaultAudioEndpoint(eCapture, eConsole)).ok()?;
-        dev.Activate(CLSCTX_ALL, None).ok()
+        let Ok(en) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else { return out };
+        let Ok(list) = en.EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE) else { return out };
+        for i in 0..list.GetCount().unwrap_or(0) {
+            let Ok(dev) = list.Item(i) else { continue };
+            let id = dev.GetId().ok().and_then(|p| { let s = p.to_string().ok(); CoTaskMemFree(Some(p.0 as _)); s }).unwrap_or_default();
+            if let Ok(v) = dev.Activate(CLSCTX_ALL, None) { out.push((id, v)) }
+        }
     }
+    out
 }
 
-/// None = no microphone.
+/// Microphones Strata muted, so unmuting leaves the ones you had muted yourself alone.
+static MUTED_BY_US: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// None = no microphone; muted = every microphone is muted.
 pub fn mic_muted() -> Option<bool> {
-    mic().and_then(|m| unsafe { m.GetMute().ok().map(|b| b.as_bool()) })
+    let m = mics();
+    if m.is_empty() { return None }
+    Some(m.iter().all(|(_, v)| unsafe { v.GetMute().map(|b| b.as_bool()).unwrap_or(false) }))
 }
 
 pub fn set_mic_muted(muted: bool) -> Result<(), String> {
-    let m = mic().ok_or("No microphone found")?;
-    unsafe { m.SetMute(muted, std::ptr::null()).map_err(|e| e.to_string()) }
+    let m = mics();
+    if m.is_empty() { return Err("No microphone found".into()) }
+    let mut ours = MUTED_BY_US.lock().unwrap();
+    let mut err = None;
+    for (id, v) in &m {
+        let now = unsafe { v.GetMute().map(|b| b.as_bool()).unwrap_or(false) };
+        if muted && !now {
+            match unsafe { v.SetMute(true, std::ptr::null()) } { Ok(()) => ours.push(id.clone()), Err(e) => err = Some(e.to_string()) }
+        } else if !muted && now && (ours.is_empty() || ours.contains(id)) {
+            if let Err(e) = unsafe { v.SetMute(false, std::ptr::null()) } { err = Some(e.to_string()) }
+        }
+    }
+    if !muted { ours.clear() }
+    drop(ours);
+    match err { Some(e) if mic_muted() != Some(muted) => Err(e), _ => Ok(()) }
 }
 
 fn keys(vks: &[VIRTUAL_KEY]) {

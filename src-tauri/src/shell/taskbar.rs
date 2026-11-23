@@ -62,6 +62,35 @@ fn spawn_guard() {
     }
 }
 
+/// What the watcher keeps in place: 0 = nothing, 1 = auto-hide, 2 = hidden.
+static ENFORCE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// Windows brings the taskbar back on its own: when an app bar (the dock) reserves or frees space, after
+/// display and settings changes, on some Start / notification interactions. Applying the mode once is
+/// not enough, so this thread puts it back within a fraction of a second, like Taskbar Hide (thide)
+/// does: hidden taskbars are re-hidden at once, the auto-hide switch is re-checked every few seconds.
+fn watch() {
+    use std::sync::atomic::Ordering::SeqCst;
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    STARTED.call_once(|| {
+        let _ = std::thread::Builder::new().name("taskbar-watch".into()).spawn(|| {
+            let mut tick = 0u32;
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(150));
+                tick = tick.wrapping_add(1);
+                let mode = ENFORCE.load(SeqCst);
+                if mode == 2 && core::any_visible() {
+                    core::set_visible(false);
+                }
+                if mode != 0 && tick % 20 == 0 && !core::get_autohide() {
+                    log::info!("taskbar auto-hide was switched off by something else; switching it back on");
+                    core::set_autohide(true);
+                }
+            }
+        });
+    });
+}
+
 /// Called once at startup, before any dock is shown.
 pub fn start(mode: TaskbarMode) -> TaskbarStatus {
     // Leftovers from a crash or kill: put the taskbar back first, then re-apply cleanly.
@@ -82,6 +111,8 @@ pub fn start(mode: TaskbarMode) -> TaskbarStatus {
             spawn_guard();
             set_run_entry(true);
             core::apply(hidden, std::process::id());
+            ENFORCE.store(if hidden { 2 } else { 1 }, std::sync::atomic::Ordering::SeqCst);
+            watch();
             TaskbarStatus::Managed { hidden }
         }
     }
@@ -97,6 +128,7 @@ pub fn reapply(status: &TaskbarStatus) {
 
 /// Clean exit.
 pub fn stop() {
+    ENFORCE.store(0, std::sync::atomic::Ordering::SeqCst);
     core::restore();
     set_run_entry(false);
 }

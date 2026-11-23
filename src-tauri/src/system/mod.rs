@@ -43,6 +43,9 @@ pub fn launch(target: &str, args: Option<&str>) -> Result<(), String> {
 /// when the app ships one, otherwise the newest `app-*` folder that has the exe.
 pub fn resolve_app_path(path: &str) -> String {
     let p = expand_env(path);
+    if p.to_lowercase().contains("\\windowsapps\\") {
+        if let Some(t) = startapps::packaged_target(&p) { return t }
+    }
     let pb = std::path::Path::new(&p);
     let (Some(file), Some(dir)) = (pb.file_name(), pb.parent()) else { return p };
     let Some(dir_name) = dir.file_name().map(|d| d.to_string_lossy().to_lowercase()) else { return p };

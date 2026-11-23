@@ -29,13 +29,32 @@
     close()
   }
 
+  // Report the content size whenever it changes. ResizeObserver only fires while the webview renders,
+  // which it may not do in the moments after the hidden card window is shown again (the card then
+  // stayed at the size of its first, still-empty content). DOM changes and a few re-checks don't
+  // depend on rendering, so they catch content that arrives late (folder lists, search results).
+  let last = ''
+  function report(force = false) {
+    if (!open || !root) return
+    const w = Math.ceil(root.offsetWidth), h = Math.ceil(root.offsetHeight), k = `${w}x${h}`
+    if (!force && k === last) return
+    last = k
+    ipc.cardReady(w, h)
+  }
+  let queued = false
+  const soon = () => { if (!queued) { queued = true; setTimeout(() => { queued = false; report() }, 0) } }
   $effect(() => {
     if (!root) return
-    const ro = new ResizeObserver(() => {
-      if (open && root) ipc.cardReady(Math.ceil(root.offsetWidth), Math.ceil(root.offsetHeight))
-    })
+    const ro = new ResizeObserver(() => report())
+    const mo = new MutationObserver(soon)
     ro.observe(root)
-    return () => ro.disconnect()
+    mo.observe(root, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class', 'style', 'open', 'hidden'] })
+    const timers = [120, 400, 1000, 2000].map((t) => setTimeout(() => report(), t))
+    // Images (cover art, thumbnails, icons) change the size when they load.
+    const load = (e: Event) => { if ((e.target as HTMLElement)?.tagName === 'IMG') soon() }
+    root.addEventListener('load', load, true)
+    root.addEventListener('error', load, true)
+    return () => { ro.disconnect(); mo.disconnect(); timers.forEach(clearTimeout); root?.removeEventListener('load', load, true); root?.removeEventListener('error', load, true) }
   })
 
   onMount(() => {
@@ -45,12 +64,7 @@
         gen++
         document.documentElement.classList.toggle('light', e.payload.light)
         await tick()
-        if (root) ipc.cardReady(Math.ceil(root.offsetWidth), Math.ceil(root.offsetHeight))
-        // Images (cover art, icons) may still be loading; re-measure once they have.
-        const imgs = [...(root?.querySelectorAll('img') ?? [])].filter((i) => !i.complete)
-        if (imgs.length) Promise.all(imgs.map((i) => new Promise((r) => { i.onload = i.onerror = r }))).then(() => {
-          if (root) ipc.cardReady(Math.ceil(root.offsetWidth), Math.ceil(root.offsetHeight))
-        })
+        report(true)
       }),
       listen('card:close', () => (open = null)),
     ]

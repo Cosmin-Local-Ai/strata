@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { sysClock } from '../../lib/clock.svelte'
   // Clock family: Flip Clock, Analog Minimal, World Clocks (three analog faces),
   // Date, Day Number, 7 Days, Today. Ticks once a minute (seconds hand only on Analog when enabled).
   import { clock } from '../../lib/stores.svelte'
@@ -8,7 +9,7 @@
   const id = $derived(item.widget)
   const c = clock(item.options.seconds ? 1000 : 60_000)
   const n = $derived(c.now)
-  const h12 = $derived(item.options.hour12 === true)
+  const h12 = $derived(item.options.hour12 ?? sysClock.h12)
   const hh = $derived(String(h12 ? ((n.getHours() + 11) % 12) + 1 : n.getHours()).padStart(2, '0'))
   const mm = $derived(String(n.getMinutes()).padStart(2, '0'))
   const zones: { label: string; tz: string }[] = $derived(item.options.zones ?? [
@@ -60,7 +61,9 @@
   .flip { display: flex; align-items: center; gap: 2px; padding: 0 10px; height: 100%; }
   .card { display: inline-grid; place-items: center; width: 17px; height: 26px; border-radius: 5px; background: var(--surface-press);
           font: 700 15px var(--font-display); font-variant-numeric: tabular-nums; animation: flip 320ms var(--ease-out); transform-origin: center; }
-  @keyframes flip { from { transform: rotateX(90deg); opacity: 0.3; } }
+  /* Starts readable: if the webview skips the animation (it can stall while Windows thinks the dock is
+     covered), the digit must still show instead of staying edge-on and invisible. */
+  @keyframes flip { from { transform: perspective(40px) rotateX(-35deg); opacity: 0.55; } }
   .colon { font-weight: 700; padding: 0 1px; opacity: 0.6; }
   .an { display: grid; place-items: center; width: 100%; height: 100%; }
   .face .rim { fill: var(--surface); stroke: var(--border); stroke-width: 1; }

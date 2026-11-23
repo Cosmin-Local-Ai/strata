@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { sysClock } from '../../lib/clock.svelte'
   // Full-screen power panel: big cards over a blurred desktop,
   // in Strata's style. The blur is DWM acrylic on the overlay window; this draws the cards.
   import { ipc } from '../../lib/ipc'
@@ -39,7 +40,7 @@
 <!-- Clicking the backdrop closes; clicks on cards don't bubble to it. -->
 <div class="backdrop" class:dim role="presentation" onclick={close}>
   <div class="head">
-    <div class="time">{now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+    <div class="time">{now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: sysClock.h12 })}</div>
     <div class="sub">Up {formatUptime(up)}</div>
   </div>
   <div class="cards" role="presentation" onclick={(e) => e.stopPropagation()}>

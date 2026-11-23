@@ -1,11 +1,12 @@
 <script lang="ts">
+  import { sysClock } from '../../lib/clock.svelte'
   // Clock (seconds optional, date, 12/24 h). Ticks once a minute unless seconds are shown.
   import { clock } from '../../lib/stores.svelte'
   import type { TileProps } from '../types'
   let { item }: TileProps = $props()
   const seconds = $derived(!!item.options.seconds)
   const c = clock(item.options.seconds ? 1000 : 60_000)
-  const h12 = $derived(item.options.hour12 === true)
+  const h12 = $derived(item.options.hour12 ?? sysClock.h12)
   const time = $derived(c.now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: seconds ? '2-digit' : undefined, hour12: h12 }))
   const date = $derived(c.now.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }))
 </script>
