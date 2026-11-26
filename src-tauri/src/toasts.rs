@@ -9,28 +9,47 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 pub const LABEL: &str = "toast";
 
-/// Notifications that arrived while the window was still loading (the page collects them).
+/// Notifications that arrived before the page was ready (it collects them when it loads).
 static PENDING: std::sync::Mutex<Vec<crate::notices::Toast>> = std::sync::Mutex::new(Vec::new());
-pub fn take_pending() -> Vec<crate::notices::Toast> { std::mem::take(&mut *PENDING.lock().unwrap()) }
+/// 0 = no window, 1 = being created / page loading, 2 = page ready. One window, created once: its
+/// label only becomes known when creation has finished, so asking for it isn't enough.
+static STATE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+pub fn take_pending() -> Vec<crate::notices::Toast> {
+    STATE.store(2, std::sync::atomic::Ordering::SeqCst);
+    std::mem::take(&mut *PENDING.lock().unwrap())
+}
 
-fn ensure(app: &AppHandle) -> tauri::Result<(tauri::WebviewWindow, bool)> {
-    if let Some(w) = app.get_webview_window(LABEL) { return Ok((w, false)) }
+/// Create the window ahead of time (hidden), so the first notification shows at once.
+pub fn warm(app: &AppHandle) {
+    if STATE.compare_exchange(0, 1, std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst).is_ok() {
+        if let Err(e) = create(app) { log::warn!("toast window: {e}"); STATE.store(0, std::sync::atomic::Ordering::SeqCst); }
+    }
+}
+
+fn create(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
     let w = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html#toast".into()))
         .additional_browser_args(crate::BROWSER_ARGS)
         .title("Strata notifications")
         .transparent(true)
         .decorations(false)
-        .shadow(false)
+        .shadow(true)
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)
         .focused(false)
         .visible(false)
         .inner_size(400.0, 10.0)
+        // The same glass as the cards; the page tints it for the dock style.
+        .effects(tauri::window::EffectsBuilder::new().effect(tauri::window::Effect::Acrylic).color(tauri::window::Color(24, 24, 28, 140)).build())
         .build()?;
     let hwnd = HWND(w.hwnd()?.0 as _);
     crate::shell::winstyle::apply(hwnd, crate::shell::winstyle::ShellStyle { no_activate: true });
-    Ok((w, true))
+    unsafe {
+        use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND};
+        let pref = DWMWCP_ROUND;
+        let _ = DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &pref as *const _ as _, std::mem::size_of_val(&pref) as u32);
+    }
+    Ok(w)
 }
 
 /// Show a notification (creates the window the first time; the page keeps a short queue until ready).
@@ -38,10 +57,11 @@ pub fn push(app: &AppHandle, t: crate::notices::Toast) {
     crate::notices::remember(&t);
     let h = app.clone();
     let _ = app.run_on_main_thread(move || {
-        match ensure(&h) {
-            Ok((_, true)) => PENDING.lock().unwrap().push(t),
-            Ok((_, false)) => { let _ = h.emit_to(LABEL, "toast:push", t); }
-            Err(e) => log::warn!("toast window: {e}"),
+        if STATE.load(std::sync::atomic::Ordering::SeqCst) == 2 {
+            let _ = h.emit_to(LABEL, "toast:push", t);
+        } else {
+            PENDING.lock().unwrap().push(t);
+            warm(&h);
         }
     });
 }

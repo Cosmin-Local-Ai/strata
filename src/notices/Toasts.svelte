@@ -10,7 +10,8 @@
   import { settings, startStores } from '../lib/stores.svelte'
   import type { Toast } from '../lib/notify'
   startStores()
-  document.body.style.background = 'transparent'
+  // Same glass as the cards: the window has the acrylic backdrop, this tints it for the dock style.
+  document.body.classList.add('card-surface')
 
   type Shown = Toast & { at: number; left: number; leaving?: boolean }
   let list = $state<Shown[]>([])
@@ -68,20 +69,21 @@
 </div>
 
 <style>
-  :global(html), :global(body) { background: transparent !important; overflow: hidden; }
-  .stack { display: inline-flex; flex-direction: column; gap: 8px; padding: 2px; width: 460px; }
-  .toast { position: relative; display: flex; flex-direction: column; gap: 3px; padding: 12px 44px 13px 16px; border-radius: 18px;
-           background: rgba(24, 24, 28, 0.94); border: 1px solid rgba(255, 255, 255, 0.1); color: #fff; cursor: default;
-           box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); animation: in 220ms var(--ease-out); }
+  :global(html), :global(body) { overflow: hidden; }
+  /* One glass panel (the window's acrylic, tinted by the dock style); notifications separated by a line. */
+  .stack { display: flex; flex-direction: column; width: 440px; }
+  .toast { position: relative; display: flex; flex-direction: column; gap: 3px; padding: 13px 46px 14px 18px; color: var(--fg); cursor: default;
+           transition: background var(--t-fast); animation: in 220ms var(--ease-out); }
+  .toast + .toast { border-top: 1px solid var(--border); }
   .top .toast { animation-name: in-top; }
-  .toast:hover { background: rgba(32, 32, 38, 0.96); }
-  .toast.leaving { opacity: 0; transform: translateY(6px); transition: opacity 160ms, transform 160ms; }
-  @keyframes in { from { opacity: 0.4; transform: translateY(10px); } }
-  @keyframes in-top { from { opacity: 0.4; transform: translateY(-10px); } }
-  .from { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: rgba(255, 255, 255, 0.55); }
+  .toast:hover { background: var(--surface-hover); }
+  .toast.leaving { opacity: 0; transition: opacity 160ms; }
+  @keyframes in { from { opacity: 0.4; transform: translateY(8px); } }
+  @keyframes in-top { from { opacity: 0.4; transform: translateY(-8px); } }
+  .from { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--fg-3); }
   .from img { width: 14px; height: 14px; object-fit: contain; }
   strong { font: 600 15px var(--font-display); line-height: 1.3; overflow-wrap: anywhere; }
-  p { margin: 0; font-size: 13px; line-height: 1.4; color: rgba(255, 255, 255, 0.68); white-space: pre-line; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; }
-  .x { position: absolute; top: 10px; right: 10px; width: 26px; height: 26px; border-radius: 13px; display: grid; place-items: center; color: rgba(255, 255, 255, 0.55); }
-  .x:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+  p { margin: 0; font-size: 13px; line-height: 1.4; color: var(--fg-2); white-space: pre-line; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; }
+  .x { position: absolute; top: 11px; right: 11px; width: 26px; height: 26px; border-radius: 13px; display: grid; place-items: center; color: var(--fg-3); }
+  .x:hover { background: var(--surface-press); color: var(--fg); }
 </style>

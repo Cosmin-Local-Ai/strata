@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1 (26 Nov 2026)
+
+### Improved
+- Notifications use your dock style (Liquid Glass, Black, White…), like the cards, and stack in one panel at the right.
+
+### Fixed
+- Two notifications arriving close together could leave none showing.
+
 ## 0.3.0 (26 Nov 2026)
 
 ### New

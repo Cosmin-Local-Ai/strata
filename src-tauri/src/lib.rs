@@ -231,6 +231,7 @@ pub fn run() {
             *app.state::<AppState>().audio.lock().unwrap() = Some(audio);
             docks.sync();
             app.state::<AppState>().cards.warm(app.handle());
+            toasts::warm(app.handle());
 
             // Komorebi live state (also re-applies the ignore rule on every connect).
             let h = app.handle().clone();
