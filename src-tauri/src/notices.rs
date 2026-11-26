@@ -256,6 +256,56 @@ pub fn remember(t: &Toast) {
 }
 pub fn clear_own() { OWN.lock().unwrap().clear() }
 
+/// Notifications cleared in Strata that Windows wouldn't remove (no tag to name them by): hidden from
+/// Strata's list. Kept in dismissed.json (the newest 1000).
+fn dismissed_path() -> std::path::PathBuf { crate::config::data_dir().join("notices-dismissed.json") }
+fn dismissed() -> std::collections::HashSet<String> {
+    std::fs::read(dismissed_path()).ok().and_then(|b| serde_json::from_slice::<Vec<String>>(&b).ok()).unwrap_or_default().into_iter().collect()
+}
+fn add_dismissed(ids: &[String]) {
+    let mut v: Vec<String> = std::fs::read(dismissed_path()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+    v.extend(ids.iter().cloned());
+    let n = v.len();
+    if n > 1000 { v.drain(..n - 1000); }
+    let _ = std::fs::write(dismissed_path(), serde_json::to_vec(&v).unwrap_or_default());
+}
+
+fn db_conn() -> Option<rusqlite::Connection> {
+    let db = std::env::var("LOCALAPPDATA").map(|l| std::path::PathBuf::from(l).join(r"Microsoft\Windows\Notifications\wpndatabase.db")).ok()?;
+    rusqlite::Connection::open_with_flags(&db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX).ok()
+}
+
+/// Clear notifications from the Notifications widget: Windows removes them from its own list too when
+/// it can (Strata asks the way apps do: by tag, or all of an app's); the rest are hidden in Strata.
+pub fn dismiss(ids: &[String], all: bool) {
+    use windows::UI::Notifications::ToastNotificationManager;
+    let hist = ToastNotificationManager::History().ok();
+    {
+        let mut own = OWN.lock().unwrap();
+        if all { own.clear() } else { own.retain(|t| !ids.contains(&t.id)) }
+    }
+    let Some(c) = db_conn() else { return };
+    let rows: Vec<(i64, String, String, String)> = c.prepare("select n.Id, h.PrimaryId, coalesce(n.Tag, ''), coalesce(n.\"Group\", '') from Notification n join NotificationHandler h on h.RecordId = n.HandlerId where n.Type = 'toast'")
+        .and_then(|mut st| st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect())
+        .unwrap_or_default();
+    let mut hide = vec![];
+    let mut cleared_apps = std::collections::HashSet::new();
+    for (id, app, tag, group) in rows {
+        let key = format!("win-{id}");
+        if !all && !ids.contains(&key) { continue }
+        if let Some(h) = &hist {
+            if all {
+                if cleared_apps.insert(app.clone()) { let _ = h.ClearWithId(&HSTRING::from(&app)); }
+            } else if !tag.is_empty() {
+                let _ = h.RemoveGroupedTagWithId(&HSTRING::from(&tag), &HSTRING::from(&group), &HSTRING::from(&app));
+            }
+        }
+        hide.push(key);
+    }
+    // Whatever Windows kept stays out of Strata's list.
+    add_dismissed(&hide);
+}
+
 /// Everything in Windows' notification list plus Strata's own, newest first (Notifications widget).
 pub fn history() -> Vec<Toast> {
     let mut out: Vec<Toast> = OWN.lock().unwrap().clone();
@@ -272,6 +322,8 @@ pub fn history() -> Vec<Toast> {
             out.push(Toast { id: format!("win-{id}"), app: app_name(&handler), target: format!(r"shell:AppsFolder\{handler}"), title: texts[0].clone(), body: texts[1..].join("\n"), source: "windows".into(), at });
         }
     }
+    let hidden = dismissed();
+    out.retain(|t| !hidden.contains(&t.id));
     out.sort_by(|a, b| b.at.cmp(&a.at));
     out
 }

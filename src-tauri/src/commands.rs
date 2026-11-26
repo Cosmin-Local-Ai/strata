@@ -305,8 +305,9 @@ pub fn toast_push(app: AppHandle, toast: crate::notices::Toast) { crate::toasts:
 pub async fn notices_list() -> Vec<crate::notices::Toast> { crate::notices::history() }
 #[tauri::command]
 pub fn toast_pending() -> Vec<crate::notices::Toast> { crate::toasts::take_pending() }
+/// Clear notifications (`all`, or these ids) from the Notifications widget.
 #[tauri::command]
-pub fn notices_clear() { crate::notices::clear_own() }
+pub async fn notices_clear(ids: Option<Vec<String>>, all: Option<bool>) { crate::notices::dismiss(&ids.unwrap_or_default(), all.unwrap_or(false)) }
 
 /// Storage widget: size what fills a drive (progress as `storage:scan` events).
 #[tauri::command]

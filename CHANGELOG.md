@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2 (26 Nov 2026)
+
+### New
+- **Clear notifications** in the Notifications widget: "Clear all", or the X on one. They're removed from Windows' notification list too (an app's notification Windows can't name individually is hidden from Strata's list instead).
+
 ## 0.3.1 (26 Nov 2026)
 
 ### Improved
