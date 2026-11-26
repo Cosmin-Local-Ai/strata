@@ -5,6 +5,14 @@ mod local;
 mod mail;
 mod services;
 mod toggles;
+mod notices;
+mod toasts;
+/// Browser flags for every Strata webview (they share one WebView2 environment, so all must match).
+/// The dock and its cards are always on screen: Chromium must never treat them as hidden behind
+/// other windows. When it did (seen on a laptop), it paused animations (Flip Clock stuck), stopped
+/// timers to once a second or less (clock, cards slow to open, laggy dock) and skipped resizes.
+/// wry's own defaults (msWebOOUI, msPdfOOUI, msSmartScreenProtection) are kept.
+pub const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows";
 mod updates;
 mod vault;
 mod dialog;
@@ -171,7 +179,7 @@ pub fn run() {
             commands::media_state, commands::media_control, commands::media_seek, commands::audio_state,
             commands::audio_set_volume, commands::audio_set_mute, commands::wifi_state, commands::net_info, commands::wifi_networks, commands::wifi_connect, commands::eq_rect, commands::windows_list, commands::window_activate, commands::window_close, commands::gallery_state, commands::gallery_pictures, commands::gallery_apply, commands::previews_set, commands::card_close_if, commands::preview_hover, commands::settings_reset, commands::secret_has, commands::secret_set, commands::secret_delete, commands::download_wallpaper, commands::http_get, commands::wallpaper_change_now, commands::tray_icons, commands::tray_click, commands::card_sticky, commands::we_control, commands::we_playlist, commands::audio_set_default, commands::audio_sessions, commands::audio_session_set,
             commands::sys_stats, commands::recycle_bin, commands::recycle_bin_empty, commands::theme_is_light, commands::theme_set_light,
-            commands::mic_muted, commands::mic_set_muted, commands::sys_action, commands::kb_layouts, commands::kb_set_layout, commands::battery, commands::launch_admin, commands::reveal, commands::audio_devices, commands::audio_device_set, commands::everything_search, commands::everything_running, commands::api, commands::google_connect, commands::google_status, commands::google_disconnect, commands::yahoo_login, commands::yahoo_mail, commands::yahoo_disconnect, commands::opencode_usage, commands::screen_time, commands::whatsapp, commands::folder_list, commands::clock_12h, commands::update_pending, commands::open_update, commands::folder_path, commands::toggles_get, commands::toggle_set, commands::brightness_get, commands::brightness_set, commands::capture_screen, commands::capture_window, commands::capture_region_begin, commands::capture_region_finish, commands::capture_region_cancel, commands::clipboard_text, commands::capture_temp_path, commands::calendars_list, commands::calendars_add, commands::calendars_remove, commands::calendars_fetch, commands::flow_toggle, commands::gamma_set, commands::gamma_reset, commands::autostart_get, commands::autostart_set, commands::capture_save_set, commands::vault_list, commands::vault_state, commands::vault_unlock, commands::vault_lock, commands::vault_save, commands::vault_delete, commands::vault_reveal, commands::vault_copy, commands::vault_generate, commands::default_player, commands::vault_lock_info, commands::vault_reset_master, commands::vault_set_master, commands::vault_import, commands::vault_export, commands::vault_health, commands::vault_attach, commands::vault_file_save, commands::vault_file_remove, commands::vault_passphrase, commands::pick_file, commands::office_apps, commands::project_action, commands::project_detect, commands::project_clone, commands::pick_folder, commands::terminal_run, commands::terminal_info, commands::start_apps, commands::google_client_saved, commands::quick_files, commands::save_text_as, commands::ui_error
+            commands::mic_muted, commands::mic_set_muted, commands::sys_action, commands::kb_layouts, commands::kb_set_layout, commands::battery, commands::launch_admin, commands::reveal, commands::audio_devices, commands::audio_device_set, commands::everything_search, commands::everything_running, commands::api, commands::google_connect, commands::google_status, commands::google_disconnect, commands::yahoo_login, commands::yahoo_mail, commands::yahoo_disconnect, commands::opencode_usage, commands::screen_time, commands::whatsapp, commands::folder_list, commands::clock_12h, commands::toast_layout, commands::toast_push, commands::notices_list, commands::notices_clear, commands::toast_pending, commands::storage_scan, commands::storage_scan_cached, commands::update_pending, commands::open_update, commands::folder_path, commands::toggles_get, commands::toggle_set, commands::brightness_get, commands::brightness_set, commands::capture_screen, commands::capture_window, commands::capture_region_begin, commands::capture_region_finish, commands::capture_region_cancel, commands::clipboard_text, commands::capture_temp_path, commands::calendars_list, commands::calendars_add, commands::calendars_remove, commands::calendars_fetch, commands::flow_toggle, commands::gamma_set, commands::gamma_reset, commands::autostart_get, commands::autostart_set, commands::capture_save_set, commands::vault_list, commands::vault_state, commands::vault_unlock, commands::vault_lock, commands::vault_save, commands::vault_delete, commands::vault_reveal, commands::vault_copy, commands::vault_generate, commands::default_player, commands::vault_lock_info, commands::vault_reset_master, commands::vault_set_master, commands::vault_import, commands::vault_export, commands::vault_health, commands::vault_attach, commands::vault_file_save, commands::vault_file_remove, commands::vault_passphrase, commands::pick_file, commands::office_apps, commands::project_action, commands::project_detect, commands::project_clone, commands::pick_folder, commands::terminal_run, commands::terminal_info, commands::start_apps, commands::google_client_saved, commands::quick_files, commands::save_text_as, commands::ui_error
         ])
         .on_window_event(|window, event| {
             // Close popups on focus loss, but only once they really had focus: when Windows refuses
@@ -229,6 +237,7 @@ pub fn run() {
             let h2 = app.handle().clone();
             komorebi::start_with_recovery(move |st| {
                 *h.state::<AppState>().kstate.lock().unwrap() = st.clone();
+                komorebi::arrange::check(st, &h.state::<AppState>().store.get().komorebi_arrange);
                 let _ = h.emit("komorebi:state", st);
             }, move || {
                 let h3 = h2.clone();
@@ -289,6 +298,7 @@ pub fn run() {
 
             local::start_screen_time();
             updates::start(app.handle().clone());
+            notices::start(app.handle().clone());
             // First run: start with Windows by default (listed in Task Manager → Startup apps; switch in Settings).
             {
                 let marker = config::data_dir().join(".autostart-initialised");
@@ -323,6 +333,7 @@ pub fn run() {
                 state.docks.shutdown();
             }
             taskbar::stop();
+            notices::restore();
             toggles::gamma_reset();
             log::info!("Strata exited cleanly");
         }

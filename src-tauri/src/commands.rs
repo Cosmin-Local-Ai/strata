@@ -282,6 +282,7 @@ pub async fn open_settings(app: AppHandle) -> R<()> {
         return Ok(());
     }
     let w = tauri::WebviewWindowBuilder::new(&app, SETTINGS_LABEL, tauri::WebviewUrl::App("index.html#settings".into()))
+        .additional_browser_args(crate::BROWSER_ARGS)
         .title("Strata Settings")
         .inner_size(860.0, 600.0)
         .min_inner_size(700.0, 460.0)
@@ -291,6 +292,27 @@ pub async fn open_settings(app: AppHandle) -> R<()> {
     let _ = w.set_focus();
     Ok(())
 }
+
+/// The notification page's size (0 high hides the window).
+#[tauri::command]
+pub fn toast_layout(app: AppHandle, width: f64, height: f64) { crate::toasts::layout(&app, width, height) }
+/// Show a Strata notification (smart notifications from widgets, tests).
+#[tauri::command]
+pub fn toast_push(app: AppHandle, toast: crate::notices::Toast) { crate::toasts::push(&app, toast) }
+
+/// Notifications widget: Windows' notification list plus Strata's own, newest first.
+#[tauri::command]
+pub async fn notices_list() -> Vec<crate::notices::Toast> { crate::notices::history() }
+#[tauri::command]
+pub fn toast_pending() -> Vec<crate::notices::Toast> { crate::toasts::take_pending() }
+#[tauri::command]
+pub fn notices_clear() { crate::notices::clear_own() }
+
+/// Storage widget: size what fills a drive (progress as `storage:scan` events).
+#[tauri::command]
+pub fn storage_scan(app: AppHandle, root: String, force: Option<bool>) { crate::system::diskscan::start(app, root, force.unwrap_or(false)) }
+#[tauri::command]
+pub fn storage_scan_cached(root: String) -> Option<crate::system::diskscan::ScanState> { crate::system::diskscan::cached(&root) }
 
 /// Version a background check found (Settings shows its notes and Install button).
 #[tauri::command]

@@ -146,6 +146,14 @@ pub struct Settings {
     pub wheel_scrolls_dock: bool,
     /// Background update checks: "notify" (message on the dock), "auto" (install and restart) or "off".
     pub update_mode: String,
+    /// komorebi arrange rules (komorebi/arrange.rs): apps kept in fixed places of a workspace.
+    pub komorebi_arrange: Vec<crate::komorebi::arrange::ArrangeRule>,
+    /// Strata shows notifications instead of Windows' pop-ups (notices.rs).
+    pub notify_strata: bool,
+    /// With Strata notifications: keep Windows' notification sounds.
+    pub notify_sound: bool,
+    /// Smart notifications from widgets (to-do times, AI limits, low disk space).
+    pub notify_smart: bool,
 }
 
 impl Default for Settings {
@@ -178,6 +186,10 @@ impl Default for Settings {
             power_backdrop: "blur".into(),
             wheel_scrolls_dock: false,
             update_mode: "notify".into(),
+            komorebi_arrange: vec![],
+            notify_strata: false,
+            notify_sound: true,
+            notify_smart: true,
         }
     }
 }

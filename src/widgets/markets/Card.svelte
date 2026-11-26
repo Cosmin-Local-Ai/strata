@@ -78,7 +78,7 @@
 </div>
 
 <style>
-  .mc { width: 330px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .mc { width: 370px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
   .amt, select, .add input { padding: 7px 10px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); color: var(--fg); outline: none; min-width: 0; }
   /* No browser spinner arrows; custom dropdown chevron. */
   .amt::-webkit-inner-spin-button, .amt::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }

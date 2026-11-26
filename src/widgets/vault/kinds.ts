@@ -9,6 +9,7 @@ export type Field = {
   label: string
   /** 'username' | 'url' live in the index (searchable, shown in the list); 'secret' / 'notes' are
    *  the main secret and notes; anything else is a secret field. */
+  /** Masked on screen (passwords, card number, CVV, PIN). Every field is encrypted either way. */
   secret?: boolean
   multiline?: boolean
   placeholder?: string
@@ -40,15 +41,22 @@ export const KINDS: KindDef[] = [
     { key: 'username', label: 'Network name (SSID)' },
     { key: 'secret', label: 'Password', secret: true, mono: true },
   ] },
+  // What an ID card, passport or driving licence carries (a Romanian ID card: series + number, CNP,
+  // issued by SPCLEP, valid from / to). Shown in full: these aren't typed in public like a password.
   { id: 'identity', name: 'ID document', plural: 'IDs', icon: IdCard, copyMain: 'Number', fields: [
-    { key: 'username', label: 'Type (passport, ID card, driving licence)' },
-    { key: 'fullName', label: 'Full name', secret: true },
-    { key: 'secret', label: 'Document number', secret: true, mono: true },
-    { key: 'personal', label: 'Personal number (CNP, SSN)', secret: true, mono: true },
-    { key: 'issued', label: 'Issued', secret: true },
-    { key: 'expires', label: 'Expires', secret: true },
-    { key: 'country', label: 'Country', secret: true },
-    { key: 'notes', label: 'Notes', multiline: true },
+    { key: 'username', label: 'Type (ID card, passport, driving licence)' },
+    { key: 'fullName', label: 'Full name' },
+    { key: 'series', label: 'Series', mono: true, placeholder: 'e.g. RX' },
+    { key: 'secret', label: 'Number', mono: true, placeholder: 'e.g. 123456' },
+    { key: 'personal', label: 'Personal number (CNP)', mono: true },
+    { key: 'birthDate', label: 'Date of birth', placeholder: 'DD.MM.YYYY' },
+    { key: 'birthPlace', label: 'Place of birth' },
+    { key: 'sex', label: 'Sex', placeholder: 'M / F' },
+    { key: 'nationality', label: 'Nationality', placeholder: 'e.g. Română / ROU' },
+    { key: 'address', label: 'Address (domiciliu)', multiline: true },
+    { key: 'issuedBy', label: 'Issued by', placeholder: 'e.g. SPCLEP Sector 1' },
+    { key: 'issued', label: 'Issue date', placeholder: 'DD.MM.YYYY' },
+    { key: 'expires', label: 'Valid until', placeholder: 'DD.MM.YYYY' },
   ] },
   { id: 'file', name: 'File', plural: 'Files', icon: FileLock2, fields: [
     { key: 'username', label: 'Description' },

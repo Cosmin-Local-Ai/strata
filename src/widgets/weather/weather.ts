@@ -12,7 +12,7 @@ export type Weather = {
   daily: { date: string; max: number; min: number; code: number; sunrise: string; sunset: string }[]
 }
 
-async function fetchWeather(p: Place): Promise<Weather> {
+export async function fetchWeather(p: Place): Promise<Weather> {
   const u = new URL('https://api.open-meteo.com/v1/forecast')
   u.search = new URLSearchParams({
     latitude: String(p.lat), longitude: String(p.lon), timezone: 'auto', forecast_days: '7',

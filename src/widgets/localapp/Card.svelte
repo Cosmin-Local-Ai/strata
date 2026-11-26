@@ -7,7 +7,7 @@
   import { invoke } from '@tauri-apps/api/core'
   import { iconUrl, ipc } from '../../lib/ipc'
   import type { CardProps } from '../types'
-  import { iconSrc, poll, projectsOf, run, projState, type Project } from './state.svelte'
+  import { iconSrc, legacyProjects, poll, projects, projectsOf, run, projState, type Project } from './state.svelte'
   let { item, act, close }: CardProps = $props()
   const list = $derived(projectsOf(item))
   $effect(() => { list.forEach((p) => poll(item.uid, p.id)) })
@@ -18,10 +18,47 @@
   $effect(() => { invoke('card_sticky', { on: !!edit }); return () => { invoke('card_sticky', { on: false }) } })
   const blank = (): Project => ({ id: 'p' + Date.now().toString(36), name: '', folder: '', start: '', stop: '', url: '', port: null, process: '', icon: '', repo: '' })
 
-  function save(next: Project[]) {
-    // Writing the list replaces an older single-project item's own fields.
-    act('set-options', { projects: next, name: null, start: null, stop: null, url: null, port: null, process: null, icon: null })
+  function save(next: Project[]) { projects.save({ list: next }) }
+  // Projects an older Strata kept inside the widget move to projects.json once, then leave the widget.
+  $effect(() => {
+    if (!projects.loaded) return
+    const old = legacyProjects(item)
+    if (!old.length) return
+    const have = new Set(list.map((p) => p.id))
+    save([...list, ...old.filter((p) => !have.has(p.id))])
+    act('set-options', { projects: null, name: null, start: null, stop: null, url: null, port: null, process: null, icon: null })
+  })
+
+  // ---- reorder: hold a project ~1.5 s (a bar fills while you hold), then drag it up or down.
+  const HOLD = 1500
+  let holding = $state<string | null>(null), dragId = $state<string | null>(null), order = $state<Project[] | null>(null)
+  const shown = $derived(order ?? list)
+  const rows: Record<string, HTMLLIElement> = {}
+  let holdTimer: ReturnType<typeof setTimeout> | undefined, start = { x: 0, y: 0 }
+  function down(e: PointerEvent, p: Project) {
+    if (e.button !== 0 || (e.target as HTMLElement).closest('button') || list.length < 2) return
+    const el = e.currentTarget as HTMLElement, id = e.pointerId
+    start = { x: e.clientX, y: e.clientY }; holding = p.id
+    holdTimer = setTimeout(() => { holding = null; dragId = p.id; order = [...list]; el.setPointerCapture(id) }, HOLD)
   }
+  function move(e: PointerEvent) {
+    if (holding && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 6) cancelHold()
+    if (!dragId || !order) return
+    const from = order.findIndex((p) => p.id === dragId)
+    let to = order.length - 1
+    for (let i = 0; i < order.length; i++) {
+      const r = rows[order[i].id]?.getBoundingClientRect()
+      if (r && e.clientY < r.top + r.height / 2) { to = i; break }
+    }
+    if (to > from && to < order.length - 1) to--
+    if (to !== from) { const next = [...order]; const [m] = next.splice(from, 1); next.splice(to, 0, m); order = next }
+  }
+  function up() {
+    cancelHold()
+    if (dragId && order) save($state.snapshot(order))
+    dragId = null; order = null
+  }
+  function cancelHold() { clearTimeout(holdTimer); holding = null }
   function saveEdit() {
     if (!edit) return
     const p = { ...$state.snapshot(edit), name: edit.name.trim(), port: edit.port ? +edit.port : null }
@@ -113,9 +150,10 @@
   {:else}
     <div class="hd"><Rocket size={16} /><strong>Projects</strong><span class="sp"></span><button class="btn" onclick={() => (edit = blank())}><Plus size={13} /> Add</button></div>
     <ul>
-      {#each list as p (p.id)}
+      {#each shown as p (p.id)}
         {@const s = projState(item.uid, p.id)}
-        <li>
+        <li bind:this={rows[p.id]} class:holding={holding === p.id} class:dragging={dragId === p.id} style="--hold:{HOLD}ms"
+            onpointerdown={(e) => down(e, p)} onpointermove={move} onpointerup={up} onpointercancel={up} title={list.length > 1 ? 'Hold to move up or down' : undefined}>
           <span class="pi">{#if p.icon}<img src={iconSrc(p.icon, iconUrl)} alt="" onerror={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')} />{:else}<Rocket size={16} />{/if}<i class="dot" class:on={s.running} class:busy={!!s.busy}></i></span>
           <span class="tx"><strong>{p.name}</strong><small>{statusText(s)}{p.url ? ` · ${p.url.replace(/^https?:\/\//, '')}` : ''}</small>{#if s.error}<small class="err">{s.error}</small>{/if}</span>
           {#if s.running && p.url}<button class="btn primary" onclick={() => { ipc.launch(p.url); close() }}><ExternalLink size={13} /> Open</button>{/if}
@@ -130,6 +168,7 @@
         <li class="empty">Add the apps you run yourself, e.g. a project from GitHub. Start, open and stop them from here.</li>
       {/each}
     </ul>
+    {#if list.length > 1}<p class="hint">Hold a project for a moment, then drag it to reorder.</p>{/if}
   {/if}
 </div>
 
@@ -152,6 +191,12 @@
   ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
   li { display: flex; align-items: center; gap: 8px; padding: 7px 6px; border-radius: 10px; transition: background var(--t-fast); }
   li:hover { background: var(--surface-hover); }
+  li { position: relative; touch-action: none; user-select: none; }
+  /* Holding: a bar fills along the bottom; when it's full the row lifts and follows the pointer. */
+  li.holding::after { content: ''; position: absolute; left: 8px; right: 8px; bottom: 2px; height: 2px; border-radius: 1px; background: var(--accent);
+                      transform-origin: left; animation: hold var(--hold) linear forwards; }
+  @keyframes hold { from { transform: scaleX(0); } }
+  li.dragging { background: var(--surface-press); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); cursor: grabbing; z-index: 2; }
   li.empty { font-size: 12px; color: var(--fg-3); line-height: 1.45; }
   li.empty:hover { background: none; }
   .pi { position: relative; width: 32px; height: 32px; border-radius: 9px; background: var(--surface); display: grid; place-items: center; flex: none; }

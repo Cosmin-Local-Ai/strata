@@ -189,6 +189,7 @@ impl Docks {
         let label = format!("dock-{}", NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
         let layout = compute_layout(d, s);
         let w = WebviewWindowBuilder::new(&self.app, &label, WebviewUrl::App("index.html".into()))
+            .additional_browser_args(crate::BROWSER_ARGS)
             .title("Strata")
             .transparent(true)
             .decorations(false)

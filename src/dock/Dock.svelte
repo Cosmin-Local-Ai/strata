@@ -1,6 +1,8 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core'
   import { listen } from '@tauri-apps/api/event'
+  import { getCurrentWebview } from '@tauri-apps/api/webview'
+  import { startSmart } from '../lib/smart.svelte'
   import { onMount } from 'svelte'
   import { ipc, type DockItem, type Layout } from '../lib/ipc'
   import { settings, startStores } from '../lib/stores.svelte'
@@ -106,6 +108,35 @@
         { label: 'Quit Strata', action: 'quit', danger: true },
       ],
     })
+  }
+
+  // ---- drop files, folders, shortcuts or programs from the desktop / Explorer to pin them here.
+  let dropAt = $state<{ index: number; x: number } | null>(null)
+  // Only over the pinned apps (the app icons group): that's where a pin belongs. Elsewhere: no drop.
+  function dropSlot(x: number): { index: number; x: number } | null {
+    const pins = items.map((it, i) => ({ i, it })).filter(({ it }) => it.widget === 'app')
+    if (!pins.length) return null
+    const first = pins[0].i, last = pins[pins.length - 1].i
+    const rects = items.map((it) => frames[it.uid]?.getBoundingClientRect())
+    const lo = rects[first], hi = rects[last]
+    if (!lo || !hi) return null
+    const gap = layout!.spacing
+    if (x < lo.left - gap - 12 || x > hi.right + gap + 12) return null
+    let index = last + 1
+    for (let i = first; i <= last; i++) { const r = rects[i]; if (r && x < r.left + r.width / 2) { index = i; break } }
+    const edge = index <= last ? rects[index]!.left - gap / 2 : hi.right + gap / 2
+    return { index, x: edge - (body?.getBoundingClientRect().left ?? 0) }
+  }
+  function pinDropped(paths: string[], x: number) {
+    const slot = dropSlot(x)
+    if (!slot) return
+    const at = slot.index
+    const known = new Set(items.filter((i) => i.widget === 'app').map((i) => String(i.options.path ?? '').toLowerCase()))
+    const added = paths.filter((p) => !known.has(p.toLowerCase())).map((p, n) => ({
+      uid: `pin${Date.now().toString(36)}${n}`, widget: 'app',
+      options: { path: p, name: (p.split(/[\\/]/).filter(Boolean).pop() ?? p).replace(/\.(lnk|exe|url)$/i, '') },
+    }))
+    if (added.length) saveItems([...items.slice(0, at), ...added, ...items.slice(at)])
   }
 
   function saveItems(next: DockItem[]) {
@@ -254,11 +285,19 @@
       settle()
       setTimeout(() => { ro.disconnect(); reveal() }, 1500)
     }, 30)
+    startSmart()
     const label = (window as any).__TAURI_INTERNALS__?.metadata?.currentWindow?.label
     const subs = [
       listen<Layout>('dock:layout', (e) => (layout = e.payload)),
       listen<YieldState>('dock:yield', (e) => (yielding = e.payload.active)),
       listen<boolean>('picker:state', (e) => (editing = e.payload)),
+      getCurrentWebview().onDragDropEvent((e) => {
+        const p = e.payload
+        if (p.type === 'leave') { dropAt = null; return }
+        const x = p.position.x / window.devicePixelRatio
+        if (p.type === 'drop') { if (p.paths.length) pinDropped(p.paths, x); dropAt = null }
+        else if (layout) { reveal(); dropAt = dropSlot(x) }
+      }),
       listen<string | { text: string; action?: string }>('dock:notice', (e) => {
         const p = typeof e.payload === 'string' ? { text: e.payload } : e.payload
         note = p.text; noteAction = p.action
@@ -310,6 +349,7 @@
         </div>
       {/each}
       </div>
+      {#if dropAt}<div class="dropline" style="left:{dropAt.x}px"></div>{/if}
       {#if note}<button class="note" class:act={noteAction} title={noteAction ? '' : 'Dismiss'} onclick={() => { if (noteAction === 'update') invoke('open_update'); note = null }}>{note}</button>{/if}
     </div>
   </main>
@@ -362,6 +402,9 @@
   .note { position: absolute; inset: 3px; z-index: 70; border-radius: inherit; background: rgba(22, 22, 26, 0.95); color: #fff; font-size: 12.5px; line-height: 1.3;
           display: flex; align-items: center; justify-content: center; padding: 0 18px; text-align: center; overflow: hidden; animation: note-in 160ms var(--ease-out); }
   .note.act { background: var(--accent); }
+  /* Where a dropped file will be pinned. */
+  .dropline { position: absolute; top: 18%; bottom: 18%; width: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--accent);
+              box-shadow: 0 0 10px var(--accent); pointer-events: none; z-index: 80; }
   @keyframes note-in { from { opacity: 0; } }
   .remove { position: absolute; top: -5px; left: -5px; z-index: 60; width: 18px; height: 18px; border-radius: 9px; background: #ff3b30; color: white;
             display: grid; place-items: center; padding: 0; box-shadow: 0 1px 4px rgba(0,0,0,.35); }

@@ -11,7 +11,7 @@
 
   let now = $state(Date.now())
 
-  type Todo = { id: string; text: string; done: boolean }
+  type Todo = { id: string; text: string; done: boolean; time?: string }
   const todos = dataFile<{ todos: Todo[] }>('todos', { todos: [] })
   const next = $derived(todos.value.todos.find((t) => !t.done))
   const doneRatio = $derived(todos.value.todos.length ? todos.value.todos.filter((t) => t.done).length / todos.value.todos.length : 0)
@@ -65,7 +65,7 @@
   <span class="todo">
     <Ring value={doneRatio} size={24} stroke={3} />
     {#if next}
-      <span class="tt">{next.text}</span>
+      <span class="tt">{next.text}</span>{#if next.time}<em class="when">{next.time}</em>{/if}
       <button class="tick" title="Done" onclick={tick}><Check size={13} /></button>
     {:else}<span class="tt muted">{todos.value.todos.length ? 'All done' : 'No to-dos'}</span>{/if}
   </span>
@@ -99,4 +99,5 @@
   .t.done { color: var(--danger); }
   .b { width: 24px; height: 24px; border-radius: 12px; display: grid; place-items: center; }
   .b:hover { background: var(--surface-hover); }
+  .when { flex: none; font: 600 11px var(--font); font-style: normal; color: #ff9f0a; font-variant-numeric: tabular-nums; }
 </style>

@@ -31,7 +31,16 @@ pub struct Project {
 
 /// The project `pid` of dock item `uid` (legacy single-project items: their own fields, id "main").
 pub fn find(s: &crate::config::Settings, uid: &str, pid: &str) -> Result<Project, String> {
-    let it = s.items.iter().find(|i| i.uid == uid && i.widget == "local-app").ok_or("This widget is no longer on the dock")?;
+    // Your list: projects.json (independent of the widget, see state.svelte.ts).
+    if let Some(p) = std::fs::read_to_string(crate::config::data_dir().join("projects.json")).ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v.get("list").and_then(|l| l.as_array()).cloned())
+        .and_then(|l| l.into_iter().filter_map(|v| serde_json::from_value::<Project>(v).ok()).find(|p| p.id == pid))
+    {
+        return Ok(p);
+    }
+    // An older Strata kept them in the widget's options.
+    let it = s.items.iter().find(|i| i.uid == uid && i.widget == "local-app").ok_or("This project is no longer in the list")?;
     let o = &it.options;
     if let Some(list) = o.get("projects").and_then(|v| v.as_array()) {
         return list.iter().filter_map(|v| serde_json::from_value::<Project>(v.clone()).ok()).find(|p| p.id == pid)
@@ -81,6 +90,7 @@ fn split(line: &str) -> Result<(String, String), String> {
 /// directly; anything else (`npm run dev`, `docker compose up -d`, `.bat`) through cmd, so commands
 /// on PATH resolve like in a terminal.
 fn run_line(line: &str, cwd: Option<&Path>, log: Option<std::fs::File>) -> Result<(), String> {
+    log::info!("project command: {line}");
     let line = crate::system::expand_env(line.trim());
     let (prog, args) = split(&line)?;
     let lower = prog.to_lowercase();

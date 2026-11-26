@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.0 (26 Nov 2026)
+
+### New
+- **Strata notifications** (Settings → Notifications): notifications from your apps appear next to the dock, at the right, in Strata's style instead of Windows' pop-ups, and the Notifications widget opens them (plus Strata's own) in a Strata list. Windows' pop-ups are switched off per app with the same switch Windows Settings uses; turn Strata notifications off and every app's own settings, and the sounds, are put back. Optionally silence Windows' notification sounds.
+- **Smart notifications**: a heads-up once per event: a calendar event starts in 10 minutes, rain is likely around an event in the next 3 hours (from your Weather widget's place), a to-do's time has come, an AI usage limit passed 80 % or 95 %, a drive is almost full.
+- **Storage** widget: free space up front, a colored bar of what fills the drive and a list of its biggest folders and files (scanned when you ask, kept 5 minutes; click one to open it), and your other drives one click away.
+- **Drop to pin**: drag a file, folder, shortcut or program onto your pinned apps to pin it there.
+- **To-dos with a time**: add one with the clock button or by typing it at the end ("Call the bank 16:00"); the time shows as a tag and turns red when it has passed.
+- **Project Launcher**: your projects are kept on their own, so removing the widget no longer loses them; hold a project for a moment, then drag it up or down to reorder.
+- **komorebi arrange rules**: keep apps in fixed places of a workspace (e.g. browser in the middle, Discord left, Spotify right); applied when one of them opens.
+
+### Improved
+- **Vault ID documents**: shown in full (only passwords, card numbers, CVV and PIN are masked), with series, number, personal number (CNP), date and place of birth, sex, nationality, address, issued by, issue and expiry dates; every field has its own copy button. Country and notes fields removed (anything already saved in them still shows).
+- **Show Desktop** catches every window (charts, tool palettes with a hidden owner), redraws windows as they come back (no more grey boxes) and keeps komorebi's tile order.
+- **Currency converter**: the currency search looks like the rest of the card, with longer names.
+- The komorebi rule that keeps Strata out of tiling is also added to komorebi.json (with a backup), so the dock no longer jumps into a tile for a moment at sign-in.
+- Strata logs what it starts (apps, terminal commands, project commands), to trace a stray window.
+
+### Fixed
+- The dock could be treated as hidden by its web view on some PCs: animations stopped (Flip Clock stuck), the dock got laggy and cards opened slowly or cut off.
+- Tray icons: clicks did nothing for many icons (Windows Security, Bluetooth, launchers); icons of apps that were closed or ended stayed listed.
+- Microphone mute is logged per microphone, to find what still records when it shouldn't.
+
 ## 0.2.3 (23 Nov 2026)
 
 ### Fixed

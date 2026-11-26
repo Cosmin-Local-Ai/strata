@@ -7,6 +7,7 @@ pub mod icons;
 pub mod media;
 pub mod misc;
 pub mod startapps;
+pub mod diskscan;
 pub mod stats;
 pub mod net;
 pub mod netinfo;
@@ -25,6 +26,8 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// Open a file, shortcut, exe, folder, URL or `shell:AppsFolder\<AUMID>` the way Explorer would.
 pub fn launch(target: &str, args: Option<&str>) -> Result<(), String> {
+    // Logged so a stray window (e.g. a console flashing open) can be traced to what started it.
+    log::info!("launch {target}{}", args.map(|a| format!(" {a}")).unwrap_or_default());
     let t = HSTRING::from(resolve_app_path(target));
     let a = args.map(HSTRING::from);
     let r = unsafe {
@@ -156,6 +159,7 @@ pub fn uptime() -> u64 {
 /// installed, else a console window. `shell`: "pwsh" | "powershell" | "cmd". PowerShell gets the
 /// command base64-encoded (-EncodedCommand), so quotes, `;` and `&` reach it untouched.
 pub fn terminal(command: &str, shell: &str, admin: bool, cwd: Option<&str>) -> Result<(), String> {
+    log::info!("terminal ({shell}{}) {command}", if admin { ", admin" } else { "" });
     use base64::Engine;
     let ps_exe = if shell == "pwsh" { "pwsh.exe" } else { "powershell.exe" };
     let dir = cwd.map(expand_env).filter(|d| std::path::Path::new(d).is_dir())

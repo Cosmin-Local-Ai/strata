@@ -1,11 +1,21 @@
-// Project Launcher: the projects of a dock item, and their running state (polled while shown).
+// Project Launcher: your projects and their running state (polled while shown). The list lives in
+// %APPDATA%\Strata\projects.json, not in the widget: removing the widget (or adding a second one)
+// keeps it.
 import { invoke } from '@tauri-apps/api/core'
 import type { DockItem } from '../../lib/ipc'
+import { dataFile } from '../../lib/stores.svelte'
 
 export type Project = { id: string; name: string; folder: string; start: string; stop: string; url: string; port: number | null; process: string; icon: string; repo: string }
 
-/** The item's projects; an older single-project item becomes a one-entry list (id "main"). */
-export function projectsOf(item: DockItem): Project[] {
+export const projects = dataFile<{ list: Project[] }>('projects', { list: [] })
+
+/** Your projects (from projects.json). */
+export function projectsOf(_item?: DockItem): Project[] {
+  return projects.value?.list ?? []
+}
+
+/** Projects an older Strata kept in the widget's own options (moved to projects.json once). */
+export function legacyProjects(item: DockItem): Project[] {
   const o = item.options
   if (Array.isArray(o.projects)) return o.projects as Project[]
   if (o.start) return [{ id: 'main', name: o.name ?? 'App', folder: o.folder ?? '', start: o.start ?? '', stop: o.stop ?? '', url: o.url ?? '', port: o.port ? +o.port : null, process: o.process ?? '', icon: o.icon ?? '', repo: '' }]

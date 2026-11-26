@@ -8,7 +8,7 @@
   import { invoke } from '@tauri-apps/api/core'
   import { ipc } from '../../lib/ipc'
   import type { CardProps } from '../types'
-  import { KINDS, kindOf, type Kind } from './kinds'
+  import { KINDS, kindOf, type Field, type Kind } from './kinds'
   let { item, act }: CardProps = $props()
 
   type Entry = { id: string; kind: Kind; title: string; username: string; url: string; updated: number; fileName: string }
@@ -88,6 +88,11 @@
       edit = { ...e, secret: s.secret, notes: s.notes, fields: { ...(s.fields ?? {}) }, changedSecret: false }; show = {}; genOpen = false; view = 'edit'
     } catch (x) { err(x) }
   }
+  /** Fields an item still has from an older version of its type (e.g. an ID's country or notes). */
+  const legacyFields = (d: Draft, known: { key: string }[]) => [
+    ...Object.keys(d.fields).filter((key) => d.fields[key] && !known.some((f) => f.key === key)).map((key) => ({ key, label: key[0].toUpperCase() + key.slice(1) })),
+    ...(d.notes && !known.some((f) => f.key === 'notes') ? [{ key: 'notes', label: 'Notes', multiline: true }] : []),
+  ] as Field[]
   const val = (d: Draft, key: string) => key === 'username' ? d.username : key === 'url' ? d.url : key === 'secret' ? d.secret : key === 'notes' ? d.notes : d.fields[key] ?? ''
   function setVal(d: Draft, key: string, v: string) {
     if (key === 'username') d.username = v
@@ -215,8 +220,8 @@
       </div>
     {/if}
     <label>Name<input bind:value={edit.title} placeholder={edit.kind === 'card' ? 'e.g. Revolut Visa' : edit.kind === 'wifi' ? 'e.g. Home' : 'e.g. GitHub'} /></label>
-    {#each k.fields as f (f.key)}
-      <label>{f.label}
+    {#each [...k.fields, ...legacyFields(edit, k.fields)] as f (f.key)}
+      <label><span class="fl">{f.label}{#if edit.id && val(edit, f.key)}<button class="cp" title="Copy {f.label.toLowerCase()}" onclick={(ev) => { ev.preventDefault(); copy(edit!, f.key, f.label) }}><Copy size={12} /></button>{/if}</span>
         {#if f.multiline}
           <textarea class:mono={f.mono} rows={f.key === 'notes' && edit.kind !== 'note' ? 2 : 5} value={val(edit, f.key)} oninput={(e) => setVal(edit!, f.key, e.currentTarget.value)} spellcheck="false"></textarea>
         {:else if f.secret}
@@ -391,6 +396,9 @@
   label { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--fg-2); }
   input, textarea { padding: 7px 9px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); outline: none; font-size: 12.5px; color: var(--fg); resize: none; font-family: inherit; }
   .mono { font-family: ui-monospace, Consolas, monospace; }
+  .fl { display: flex; align-items: center; gap: 6px; min-height: 18px; }
+  .cp { display: grid; place-items: center; width: 20px; height: 18px; border-radius: 5px; color: var(--fg-3); opacity: 0.7; }
+  .cp:hover { color: var(--fg); background: var(--surface-hover); opacity: 1; }
   .sec { display: flex; gap: 4px; }
   .sec input { flex: 1; min-width: 0; }
   .sec button { width: 32px; flex: none; border-radius: 8px; display: grid; place-items: center; background: var(--surface); }

@@ -67,6 +67,7 @@ fn ensure_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         return Ok(w);
     }
     let w = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html#card".into()))
+        .additional_browser_args(crate::BROWSER_ARGS)
         .title("Strata card")
         .transparent(true)
         .decorations(false)
@@ -102,7 +103,7 @@ fn ensure_overlay(app: &AppHandle, kind: &str) -> tauri::Result<WebviewWindow> {
     if let Some(w) = app.get_webview_window(label) {
         return Ok(w);
     }
-    let mut b = WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html#overlay".into()));
+    let mut b = WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html#overlay".into())).additional_browser_args(crate::BROWSER_ARGS);
     let w = b
         .title("Strata panel")
         .transparent(true)

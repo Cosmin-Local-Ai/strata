@@ -4,6 +4,7 @@
   import { invoke } from '@tauri-apps/api/core'
   import type { CardProps } from '../types'
   import Ring from './Ring.svelte'
+  import Storage from './Storage.svelte'
   import Spark from '../../lib/ui/Spark.svelte'
   import { gb, rate, spark, stats, useStats } from './stats.svelte'
   let { item, act }: CardProps = $props()
@@ -16,7 +17,7 @@
   const max = $derived(Math.max(...list.map((p) => p.value), 1))
 </script>
 
-<div class="sc">
+<div class="sc" class:wide={id === 'storage'}>
   {#if id === 'network'}
     <div class="hdr"><span class="d"><ArrowDown size={14} /> {rate(s?.netDown ?? 0)}</span><span class="u"><ArrowUp size={14} /> {rate(s?.netUp ?? 0)}</span></div>
     <svg viewBox="0 0 300 110" class="chart">
@@ -25,8 +26,9 @@
       <path class="line up" d={spark(stats.up, 300, 106, Math.max(...stats.down, 1))} />
     </svg>
     <p class="muted">Last 2 minutes · all adapters except virtual ones</p>
-  {:else if id === 'storage' || id === 'drives'}
-    {#if id === 'storage'}<p class="muted">Click a drive to show it on the tile.</p>{/if}
+  {:else if id === 'storage'}
+    <Storage picked={pickedDrive} onpick={(m) => { pickedDrive = m; act('set-options', { drive: m }) }} />
+  {:else if id === 'drives'}
     {#each s?.drives ?? [] as d (d.mount)}
       {@const used = 1 - d.free / Math.max(1, d.total)}
       <button class="drive" class:picked={id === 'storage' && (pickedDrive ?? s?.drives.find((x) => x.mount.toUpperCase().startsWith('C'))?.mount) === d.mount} onclick={() => { if (id === 'storage') { pickedDrive = d.mount; act('set-options', { drive: d.mount }) } }}>
@@ -60,6 +62,7 @@
 
 <style>
   .sc { width: 320px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .sc.wide { width: auto; padding: 16px; }
   .hdr { display: flex; align-items: center; gap: 12px; }
   .hdr strong { font: 600 18px var(--font-display); }
   .hdr .d, .hdr .u { display: flex; align-items: center; gap: 4px; font-weight: 600; font-variant-numeric: tabular-nums; }

@@ -296,6 +296,7 @@ pub fn copy(id: &str, field: &str) -> Result<(), String> {
     let text = match field {
         "username" => list().into_iter().find(|x| x.id == id).map(|x| x.username).ok_or("not found")?,
         "secret" => read_secret(id)?.secret,
+        "notes" => read_secret(id)?.notes,
         f => read_secret(id)?.fields.get(f).cloned().ok_or("not found")?,
     };
     let seq = clipboard_private(&text)?;

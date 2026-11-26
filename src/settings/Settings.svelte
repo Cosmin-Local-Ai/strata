@@ -2,7 +2,7 @@
   // Settings window (index.html#settings), styled after macOS System Settings (brief §4.2):
   // sidebar of sections, grouped rows, an info tip on every dock setting, changes apply live.
   import { invoke } from '@tauri-apps/api/core'
-  import { AppWindow, Gamepad2, Info, Monitor, Palette, PanelBottom, PanelBottomClose as Taskbar, Sparkles } from '@lucide/svelte'
+  import { AppWindow, Bell, Gamepad2, Info, Monitor, Palette, PanelBottom, PanelBottomClose as Taskbar, Sparkles } from '@lucide/svelte'
   import { settings, startStores } from '../lib/stores.svelte'
   import { notesFor, renderNotes } from '../lib/changelog'
   import { ipc } from '../lib/ipc'
@@ -20,6 +20,7 @@
     { id: 'taskbar', label: 'Windows taskbar', icon: Taskbar },
     { id: 'glass', label: 'Glass', icon: Sparkles },
     { id: 'game', label: 'Game & AI mode', icon: Gamepad2 },
+    { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'about', label: 'About', icon: Info },
   ]
   let section = $state('dock')
@@ -235,6 +236,23 @@
             <div class="li"><span>{a}</span><button class="x" onclick={() => set({ yieldApps: s.yieldApps.filter((x: string) => x !== a) })} aria-label="Remove">×</button></div>
           {/each}
           <div class="li add"><input bind:value={newApp} placeholder="Add a program, e.g. comfyui.exe" onkeydown={(e) => e.key === 'Enter' && addYield()} /><button onclick={addYield}>Add</button></div>
+        </div>
+      {:else if section === 'notifications'}
+        <div class="group">
+          <Row label="Strata notifications" tip="Notifications from your apps appear above the dock in Strata's style, and Windows' own pop-ups are switched off (per app, the same switch as in Windows Settings). They stay in Windows' notification list, and the Notifications widget opens them in Strata. Off: Windows notifications as before, with every app's own settings put back.">
+            <input type="checkbox" class="sw" checked={s.notifyStrata} onchange={(e) => set({ notifyStrata: e.currentTarget.checked })} />
+          </Row>
+          {#if s.notifyStrata}
+            <Row label="Notification sounds" tip="Keep the sound Windows plays for a notification. Off silences Windows' notification sounds (put back when Strata notifications are turned off).">
+              <input type="checkbox" class="sw" checked={s.notifySound} onchange={(e) => set({ notifySound: e.currentTarget.checked })} />
+            </Row>
+          {/if}
+          <Row label="Smart notifications" tip="A heads-up from your widgets, at most once per event: a to-do's time has come, an AI usage limit is nearly used up, a drive is almost full.">
+            <input type="checkbox" class="sw" checked={s.notifySmart} onchange={(e) => set({ notifySmart: e.currentTarget.checked })} />
+          </Row>
+          <Row label="Try it" tip="Shows a sample notification above the dock.">
+            <button class="btn" onclick={() => invoke('toast_push', { toast: { id: 'test-' + Date.now(), app: 'Strata', title: 'This is a Strata notification', body: 'Click it to open the app it came from; it goes away by itself after a few seconds.', target: '', source: 'strata' } })}>Show a test notification</button>
+          </Row>
         </div>
       {:else if section === 'about'}
         <div class="group">

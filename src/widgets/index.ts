@@ -85,6 +85,7 @@ import AppsCard from './apps/Card.svelte'
 import { groupWindows, newWindow, running, windowsForPinned } from './apps/apps.svelte'
 import { settings } from '../lib/stores.svelte'
 import { invoke } from '@tauri-apps/api/core'
+import NoticesCard from './notices/Card.svelte'
 import { notice } from '../lib/notice'
 import { media } from '../lib/stores.svelte'
 import { audio } from '../lib/stores.svelte'
@@ -240,7 +241,10 @@ export const widgets: WidgetDef[] = [
   { id: 'network', name: 'Network', category: 'system', description: 'Download and upload speed with a live chart.', tile: SysTile, card: SysCard, shape: 'wide' },
   { id: 'storage', name: 'Storage', category: 'system', description: 'Free space on your drives, including USB.', tile: SysTile, card: SysCard, shape: 'wide' },
   { id: 'show-desktop', name: 'Show Desktop', category: 'system', description: 'Minimise everything (Win+D).', tile: ActTile, shape: 'square', click: () => { invoke('sys_action', { action: 'show-desktop' }) } },
-  { id: 'notifications', name: 'Notifications', category: 'system', description: 'Open Notification Center (Win+N).', tile: ActTile, shape: 'square', click: () => { invoke('sys_action', { action: 'notifications' }) } },
+  // With Strata notifications on: Strata's list (Windows' notifications plus Strata's own); otherwise
+  // Windows' Notification Center.
+  { id: 'notifications', name: 'Notifications', category: 'system', description: 'Your notifications: Strata’s list when Strata shows notifications, else Notification Center (Win+N).', tile: ActTile, card: NoticesCard, shape: 'square',
+    click: () => { if (settings.value?.notifyStrata) return true; invoke('sys_action', { action: 'notifications' }) } },
   { id: 'keyboard', name: 'Keyboard', category: 'system', description: 'On-Screen Keyboard.', tile: ActTile, shape: 'square', click: () => { invoke('sys_action', { action: 'keyboard' }) } },
   { id: 'theme-toggle', name: 'Theme Toggle', category: 'system', description: 'Switch Windows between light and dark.', tile: ActTile, shape: 'square', click: () => { toggleTheme() } },
   { id: 'microphone', name: 'Microphone', category: 'system', description: 'Mute or unmute your microphone for all apps.', tile: ActTile, shape: 'square', click: () => { toggleMic() } },

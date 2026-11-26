@@ -115,6 +115,7 @@ export function useService(id: string, a: Adapter, opts: () => Record<string, an
       if (my !== seq) return
       v.updated = Date.now()
       st.view = v; st.error = ''; st.connected = true
+      import('./smart.svelte').then((m) => m.checkLimits(a.title, v.limits))
       localStorage.setItem(key, JSON.stringify({ at: Date.now(), view: v, connected: true }))
     } catch (e) {
       if (my !== seq) return

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Check, Flag, Plus, RotateCcw, Trash2 } from '@lucide/svelte'
+  import { Check, Clock, Flag, Plus, RotateCcw, Trash2, X } from '@lucide/svelte'
   import { dataFile } from '../../lib/stores.svelte'
   import type { CardProps } from '../types'
   import { fmt, persisted, POMO, type PomoState, type SwState, type TimerState } from './timers.svelte'
@@ -9,15 +9,23 @@
   $effect(() => { const t = setInterval(() => (now = Date.now()), 250); return () => clearInterval(t) })
 
   // Todos
-  type Todo = { id: string; text: string; done: boolean }
+  // A to-do may have a time ("HH:MM", today): the clock button in the input adds one, or type it at
+  // the end ("Finish the essay 16:00", "... at 16:00"). Typing a task stays one field + Enter.
+  type Todo = { id: string; text: string; done: boolean; time?: string }
   const todos = dataFile<{ todos: Todo[] }>('todos', { todos: [] })
-  let text = $state('')
+  let text = $state(''), time = $state(''), timeOpen = $state(false)
+  let timeInput = $state<HTMLInputElement>()
   function add() {
-    const t = text.trim()
+    let t = text.trim(), at = time
+    const m = /\s+(?:at\s+|@\s*)?([01]?\d|2[0-3])[:.]([0-5]\d)$/i.exec(t)
+    if (m && !at) { at = `${m[1].padStart(2, '0')}:${m[2]}`; t = t.slice(0, m.index).trim() }
     if (!t) return
-    todos.save({ todos: [...todos.value.todos, { id: 't' + Date.now(), text: t, done: false }] })
-    text = ''
+    todos.save({ todos: [...todos.value.todos, { id: 't' + Date.now(), text: t, done: false, ...(at ? { time: at } : {}) }] })
+    text = ''; time = ''; timeOpen = false
   }
+  const nowHM = $derived(new Date(now).toTimeString().slice(0, 5))
+  const todoLeft = $derived(todos.value.todos.filter((t) => !t.done).length)
+  const doneN = $derived(todos.value.todos.length - todoLeft)
   const setTodos = (f: (l: Todo[]) => Todo[]) => todos.save({ todos: f(todos.value.todos) })
 
   // Timer
@@ -38,8 +46,19 @@
 
 <div class="pc">
   {#if id === 'todos'}
+    {#if todos.value.todos.length}
+      <div class="th"><span><b>{todoLeft} left</b> · {doneN} of {todos.value.todos.length} done</span>
+        {#if doneN}<button class="link" onclick={() => setTodos((l) => l.filter((x) => !x.done))}>Clear done</button>{/if}</div>
+      <div class="prog"><i style="width:{(doneN / todos.value.todos.length) * 100}%"></i></div>
+    {/if}
     <form class="add" onsubmit={(e) => { e.preventDefault(); add() }}>
-      <input bind:value={text} placeholder="Add a to-do" />
+      <input bind:value={text} placeholder="Add a to-do (a time like 16:00 at the end works too)" />
+      {#if timeOpen}
+        <input class="tm" type="time" bind:this={timeInput} bind:value={time} aria-label="Time" />
+        <button type="button" class="ghost" aria-label="No time" onclick={() => { time = ''; timeOpen = false }}><X size={13} /></button>
+      {:else}
+        <button type="button" class="ghost" aria-label="Add a time" title="Add a time" onclick={() => { timeOpen = true; queueMicrotask(() => timeInput?.focus()) }}><Clock size={14} /></button>
+      {/if}
       <button type="submit" aria-label="Add"><Plus size={15} /></button>
     </form>
     <ul class="todos">
@@ -47,11 +66,11 @@
         <li class:done={t.done}>
           <button class="chk" onclick={() => setTodos((l) => l.map((x) => (x.id === t.id ? { ...x, done: !x.done } : x)))} aria-label="Toggle">{#if t.done}<Check size={12} />{/if}</button>
           <span>{t.text}</span>
+          {#if t.time}<em class="when" class:late={!t.done && t.time < nowHM}><Clock size={11} /> {t.time}</em>{/if}
           <button class="del" onclick={() => setTodos((l) => l.filter((x) => x.id !== t.id))} aria-label="Delete"><Trash2 size={13} /></button>
         </li>
       {:else}<li class="muted">Nothing to do.</li>{/each}
     </ul>
-    {#if todos.value.todos.some((t) => t.done)}<button class="link" onclick={() => setTodos((l) => l.filter((x) => !x.done))}>Clear completed</button>{/if}
   {:else if id === 'timer'}
     <div class="big">{fmt(left, left >= 3_600_000)}</div>
     <div class="presets">{#each saved.value as p}<button onclick={() => startTimer(p)}>{p >= 3_600_000 ? `${p / 3_600_000} h` : `${p / 60_000} min`}</button>{/each}</div>
@@ -87,6 +106,17 @@
   .todos li { display: flex; align-items: center; gap: 8px; padding: 6px 4px; font-size: 13px; }
   .todos li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .todos li.done span { text-decoration: line-through; color: var(--fg-3); }
+  .when { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 2px 7px; border-radius: 7px; font: 600 11.5px var(--font); font-style: normal;
+          color: #ff9f0a; background: color-mix(in srgb, #ff9f0a 16%, transparent); font-variant-numeric: tabular-nums; }
+  .when.late { color: var(--danger); background: color-mix(in srgb, var(--danger) 16%, transparent); }
+  .todos li.done .when { opacity: 0.45; }
+  .th { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--fg-3); }
+  .th b { color: var(--fg); font-weight: 600; }
+  .prog { height: 3px; border-radius: 2px; background: var(--surface-press); overflow: hidden; margin-bottom: 2px; }
+  .prog i { display: block; height: 100%; background: var(--accent); border-radius: 2px; transition: width var(--t-med) var(--ease-out); }
+  .add .ghost { background: none; color: var(--fg-3); }
+  .add .ghost:hover { color: var(--fg); background: var(--surface-hover); }
+  .add .tm { flex: 0 0 92px; min-width: 0; }
   .chk { width: 20px; height: 20px; border-radius: 10px; border: 1.5px solid var(--fg-3); display: grid; place-items: center; flex: none; }
   .done .chk { background: var(--good); border-color: var(--good); color: white; }
   .del { color: var(--fg-3); padding: 3px; border-radius: 6px; }

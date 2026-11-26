@@ -7,6 +7,7 @@
 //! * Re-applies Strata's ignore rule on every (re)connect: runtime rules die with komorebi.
 //! * Commands go through `komorebic` with an allow-list of subcommands.
 
+pub mod arrange;
 use serde::Serialize;
 use std::os::windows::process::CommandExt;
 use std::process::{Command, Output};
@@ -32,6 +33,56 @@ static RULE_SET: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::
 
 /// Make sure komorebi never tiles, borders, animates or cloaks any Strata surface (D-004).
 /// Sent once per komorebi instance: re-sending makes komorebi retile, which visibly moves windows.
+/// komorebi adopts every window that exists when it starts, before Strata can send its runtime rule
+/// (at sign-in komorebi usually starts a few seconds after Strata): the dock jumped into a tile for
+/// a moment. A rule in komorebi.json is known before komorebi looks at any window, so add one
+/// (once, with a backup next to it). Text is inserted, not re-serialised: the file keeps its layout.
+/// Run `f` with komorebi's movement animation off (when komorebi.json turns it on), so a series of
+/// moves Strata makes (arrange, Show Desktop's order) lands in one go instead of visibly shuffling.
+pub fn without_animation(f: impl FnOnce()) {
+    let on = std::env::var_os("KOMOREBI_CONFIG_HOME").map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("USERPROFILE").map(std::path::PathBuf::from))
+        .and_then(|d| std::fs::read_to_string(d.join("komorebi.json")).ok())
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v["animation"]["enabled"].as_bool())
+        .unwrap_or(false);
+    if on { let _ = komorebic(&["animation", "disable"]); }
+    f();
+    if on {
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        let _ = komorebic(&["animation", "enable"]);
+    }
+}
+
+pub fn ensure_static_ignore() {
+    let path = std::env::var_os("KOMOREBI_CONFIG_HOME").map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("USERPROFILE").map(std::path::PathBuf::from))
+        .map(|d| d.join("komorebi.json"));
+    let Some(path) = path.filter(|p| p.is_file()) else { return };
+    let Ok(text) = std::fs::read_to_string(&path) else { return };
+    if text.to_lowercase().contains("\"strata.exe\"") { return }
+    let rule = r#"{ "kind": "Exe", "id": "strata.exe", "matching_strategy": "Equals" }"#;
+    let next = if let Some(i) = text.find("\"ignore_rules\"") {
+        let Some(open) = text[i..].find('[').map(|o| i + o + 1) else { return };
+        let empty = text[open..].trim_start().starts_with(']');
+        format!("{}\n    {}{}{}", &text[..open], rule, if empty { "\n  " } else { "," }, &text[open..])
+    } else {
+        let Some(close) = text.rfind('}') else { return };
+        let before = text[..close].trim_end();
+        let comma = if before.ends_with('{') { "" } else { "," };
+        format!("{}{}\n  \"ignore_rules\": [\n    {}\n  ]\n}}{}", before, comma, rule, &text[close + 1..])
+    };
+    if serde_json::from_str::<serde_json::Value>(&next).is_err() {
+        log::warn!("komorebi.json: could not add Strata's ignore rule safely; add it by hand");
+        return;
+    }
+    let _ = std::fs::copy(&path, path.with_extension("json.before-strata"));
+    match std::fs::write(&path, next) {
+        Ok(()) => log::info!("komorebi.json: added an ignore rule for strata.exe (backup: komorebi.json.before-strata)"),
+        Err(e) => log::warn!("komorebi.json: {e}"),
+    }
+}
+
 pub fn ensure_ignore_rules() {
     use std::sync::atomic::Ordering;
     if RULE_SET.load(Ordering::SeqCst) {
@@ -111,6 +162,8 @@ pub struct KWorkspace {
     pub monocle: bool,
     pub maximized: bool,
     pub windows: Vec<KWindow>,
+    /// Exe of each tiled container's first window, in layout order (used by arrange.rs).
+    pub containers: Vec<String>,
     pub floating: usize,
     /// Windows in the focused container when it is a stack (more than one window).
     pub stack: Vec<KWindow>,
@@ -180,6 +233,7 @@ pub fn reduce(state: &serde_json::Value) -> KState {
             let mut windows = vec![];
             let mut stack = vec![];
             let mut stack_focused = 0;
+            let container_exes: Vec<String> = containers.iter().map(|c| ring(c, "windows").0.first().map(|x| window_of(x).exe).unwrap_or_default()).collect();
             for (ci, c) in containers.iter().enumerate() {
                 let (ws, fwi) = ring(c, "windows");
                 for x in &ws {
@@ -213,6 +267,7 @@ pub fn reduce(state: &serde_json::Value) -> KState {
                 monocle,
                 maximized,
                 windows,
+                containers: container_exes,
                 floating,
                 stack,
                 stack_focused,
@@ -370,6 +425,7 @@ fn start_inner(emit: impl Fn(&KState) + Send + 'static, self_managed: Option<Box
                 }
                 log::info!("komorebi connected");
                 ensure_ignore_rules();
+                ensure_static_ignore();
                 // komorebi only sends on events; fetch the current state once so the dock is
                 // correct immediately.
                 if let Ok(o) = komorebic(&["state"]) {

@@ -48,6 +48,22 @@ fn icons() -> &'static Mutex<HashMap<String, TrayIcon>> {
     I.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// NIM_SETVERSION seen per identity ("hwnd:uid" and "guid:…"): an app may set the version with a
+/// different identification than it added the icon with, which left icons at version 0.
+fn versions() -> &'static Mutex<HashMap<String, u32>> {
+    static V: OnceLock<Mutex<HashMap<String, u32>>> = OnceLock::new();
+    V.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Drop icons whose window is gone (the app exited or was ended in Task Manager without removing
+/// its icon). Returns true if any went.
+fn prune_dead() -> bool {
+    let mut map = icons().lock().unwrap();
+    let before = map.len();
+    map.retain(|_, i| unsafe { IsWindow(Some(HWND(i.hwnd as usize as _))).as_bool() });
+    map.len() != before
+}
+
 pub fn list() -> Vec<TrayIcon> {
     let mut v: Vec<TrayIcon> = icons().lock().unwrap().values().filter(|i| !i.hidden).cloned().collect();
     v.sort_by_key(|i| i.order);
@@ -142,6 +158,10 @@ fn handle(msg: &[u8], counter: &mut u64) -> bool {
             });
             e.hwnd = hwnd;
             e.uid = uid;
+            if e.version == 0 {
+                let vs = versions().lock().unwrap();
+                if let Some(&v) = vs.get(&key).or_else(|| vs.get(&format!("{hwnd:x}:{uid}"))) { e.version = v; }
+            }
             if flags & 0x1 != 0 { e.callback = u32_at(d, n + 16); }
             if flags & 0x4 != 0 { e.tooltip = wstr_at(d, n + 24, 128); }
             if flags & 0x8 != 0 {
@@ -156,7 +176,16 @@ fn handle(msg: &[u8], counter: &mut u64) -> bool {
         }
         4 => {
             // NIM_SETVERSION
-            if let Some(e) = map.get_mut(&key) { e.version = u32_at(d, n + 800); }
+            let v = u32_at(d, n + 800);
+            let plain = format!("{hwnd:x}:{uid}");
+            {
+                let mut vs = versions().lock().unwrap();
+                vs.insert(key.clone(), v);
+                vs.insert(plain.clone(), v);
+            }
+            for e in map.values_mut() {
+                if e.key == key || (e.hwnd == hwnd && e.uid == uid) { e.version = v; }
+            }
             false
         }
         _ => false,
@@ -230,6 +259,7 @@ pub fn start(emit: impl Fn(Vec<TrayIcon>) + Send + 'static) {
             let mut buf = vec![0u8; 1 << 20];
             let mut dirty = false;
             let mut last_emit = std::time::Instant::now();
+            let mut last_prune = std::time::Instant::now();
             loop {
                 let mut rov = OVERLAPPED { hEvent: ev, ..Default::default() };
                 let mut n = 0u32;
@@ -241,6 +271,10 @@ pub fn start(emit: impl Fn(Vec<TrayIcon>) + Send + 'static) {
                     Err(_) if GetLastError() == ERROR_IO_PENDING => loop {
                         if WaitForSingleObject(ev, 150) == WAIT_OBJECT_0 {
                             break GetOverlappedResult(pipe, &rov, &mut n, false).is_ok();
+                        }
+                        if last_prune.elapsed() > std::time::Duration::from_secs(3) {
+                            last_prune = std::time::Instant::now();
+                            if prune_dead() { dirty = true; }
                         }
                         if dirty {
                             emit(list());
@@ -283,6 +317,10 @@ pub fn click(key: &str, button: &str, x: i32, y: i32) -> Result<(), String> {
     const NIN_SELECT: u32 = WM_USER;
     const NIN_KEYSELECT: u32 = WM_USER + 1;
     let _ = NIN_KEYSELECT;
+    // An icon identified by a GUID always uses version 4 messages (GUIDs came with version 4); one
+    // whose NIM_SETVERSION we missed would otherwise get old-style clicks it ignores.
+    let version = if i.version == 0 && key.starts_with("guid:") { 4 } else { i.version };
+    let i = TrayIcon { version, ..i };
     let v3 = i.version >= 3;
     let msgs: Vec<u32> = match button {
         "left" if v3 => vec![WM_LBUTTONDOWN, WM_LBUTTONUP, NIN_SELECT],
@@ -294,6 +332,8 @@ pub fn click(key: &str, button: &str, x: i32, y: i32) -> Result<(), String> {
         _ => return Err("unknown button".into()),
     };
     let _ = (x, y);
+    log::info!("tray click {button} on {key}: exe={} hwnd={:x} alive={} uid={} callback={:#x} version={}", i.exe, i.hwnd,
+        unsafe { IsWindow(Some(HWND(i.hwnd as usize as _))).as_bool() }, i.uid, i.callback, i.version);
     let mut pt = windows::Win32::Foundation::POINT::default();
     unsafe { let _ = GetCursorPos(&mut pt); }
     unsafe {
