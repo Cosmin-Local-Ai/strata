@@ -32,23 +32,16 @@ fn create(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
         .title("Strata notifications")
         .transparent(true)
         .decorations(false)
-        .shadow(true)
+        .shadow(false)
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)
         .focused(false)
         .visible(false)
         .inner_size(400.0, 10.0)
-        // The same glass as the cards; the page tints it for the dock style.
-        .effects(tauri::window::EffectsBuilder::new().effect(tauri::window::Effect::Acrylic).color(tauri::window::Color(24, 24, 28, 140)).build())
         .build()?;
     let hwnd = HWND(w.hwnd()?.0 as _);
     crate::shell::winstyle::apply(hwnd, crate::shell::winstyle::ShellStyle { no_activate: true });
-    unsafe {
-        use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND};
-        let pref = DWMWCP_ROUND;
-        let _ = DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &pref as *const _ as _, std::mem::size_of_val(&pref) as u32);
-    }
     Ok(w)
 }
 
